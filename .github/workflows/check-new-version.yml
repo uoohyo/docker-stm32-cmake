@@ -1,0 +1,170 @@
+name: Check for New STM32CubeCLT Version
+
+on:
+  schedule:
+    # Run every Sunday at 00:00 UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  check-new-version:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      actions: write
+    steps:
+      - name: Ensure required labels exist
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const labels = [
+              { name: 'automation',   color: '0075ca', description: 'Automated process' },
+              { name: 'new-version',  color: 'e4e669', description: 'New STM32CubeCLT version detected' },
+              { name: 'building',     color: 'f9d0c4', description: 'Build in progress' },
+              { name: 'failed',       color: 'd73a4a', description: 'Build failed' },
+              { name: 'completed',    color: '0e8a16', description: 'Build completed successfully' },
+            ];
+            for (const label of labels) {
+              try {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ...label
+                });
+                console.log(`Created label: ${label.name}`);
+              } catch (e) {
+                if (e.status === 422) {
+                  console.log(`Label already exists: ${label.name}`);
+                } else {
+                  throw e;
+                }
+              }
+            }
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Get all versions from ST
+        id: st-versions
+        run: |
+          echo "Fetching all versions from ST website..."
+          ALL_VERSIONS=$(bash .github/scripts/parse-versions.sh)
+          LATEST_VERSION=$(echo "$ALL_VERSIONS" | jq -r '.[0].version')
+
+          DELIMITER=$(openssl rand -hex 8)
+          { echo "versions<<${DELIMITER}"; echo "${ALL_VERSIONS}"; echo "${DELIMITER}"; } >> $GITHUB_OUTPUT
+          echo "latest=${LATEST_VERSION}" >> $GITHUB_OUTPUT
+          echo "ST latest version: ${LATEST_VERSION}"
+          echo "Total ST versions: $(echo "$ALL_VERSIONS" | jq '. | length')"
+
+      - name: Get existing versions from Docker Hub
+        id: hub-versions
+        run: |
+          echo "Fetching existing tags from Docker Hub..."
+
+          # Get all tags from Docker Hub (handle API errors gracefully)
+          RESPONSE=$(curl -s "https://hub.docker.com/v2/repositories/uoohyo/stm32cubeclt/tags?page_size=100")
+
+          # Check if repository exists (API returns error object if not found)
+          if echo "$RESPONSE" | jq -e '.message' > /dev/null 2>&1; then
+            echo "Repository not found or API error: $(echo "$RESPONSE" | jq -r '.message')"
+            echo "tags=[]" >> $GITHUB_OUTPUT
+          else
+            # Extract version tags
+            TAGS=$(echo "$RESPONSE" | jq -r '.results[].name' 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' || echo "")
+
+            if [ -z "$TAGS" ]; then
+              echo "No existing version tags found on Docker Hub"
+              echo "tags=[]" >> $GITHUB_OUTPUT
+            else
+              # Convert to JSON array
+              TAGS_JSON=$(echo "$TAGS" | jq -R . | jq -s .)
+              echo "tags=${TAGS_JSON}" >> $GITHUB_OUTPUT
+              echo "Existing Docker Hub versions: $(echo "$TAGS_JSON" | jq '. | length')"
+            fi
+          fi
+
+      - name: Find missing versions
+        id: missing-versions
+        run: |
+          ST_VERSIONS='${{ steps.st-versions.outputs.versions }}'
+          HUB_TAGS='${{ steps.hub-versions.outputs.tags }}'
+
+          # Find Linux-supported versions that exist on ST but not on Docker Hub
+          MISSING=$(echo "$ST_VERSIONS" | jq --argjson hub "$HUB_TAGS" '
+            map(select(.linux_supported == true)) |
+            map(select(.version as $v | $hub | index($v) | not))
+          ')
+
+          MISSING_COUNT=$(echo "$MISSING" | jq '. | length')
+          DELIMITER=$(openssl rand -hex 8)
+          { echo "missing<<${DELIMITER}"; echo "${MISSING}"; echo "${DELIMITER}"; } >> $GITHUB_OUTPUT
+          echo "count=${MISSING_COUNT}" >> $GITHUB_OUTPUT
+
+          echo "Missing versions: ${MISSING_COUNT}"
+          if [ "$MISSING_COUNT" -gt 0 ]; then
+            echo "$MISSING" | jq -r '.[].version'
+          fi
+
+      - name: Trigger build for missing versions
+        if: steps.missing-versions.outputs.count > 0
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const missingVersions = ${{ steps.missing-versions.outputs.missing }};
+            const count = missingVersions.length;
+
+            console.log(`Triggering build for ${count} missing version(s):`);
+            missingVersions.forEach(v => console.log(`  - ${v.version}`));
+
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'build-all-versions.yml',
+              ref: 'main',
+              inputs: {
+                versions: JSON.stringify(missingVersions),
+                push_to_registry: 'true'
+              }
+            });
+
+            console.log(`Build triggered successfully`);
+
+      - name: Create issue for new versions
+        if: steps.missing-versions.outputs.count > 0
+        id: create-issue
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const missingVersions = ${{ steps.missing-versions.outputs.missing }};
+            const latestVersion = '${{ steps.st-versions.outputs.latest }}';
+            const count = missingVersions.length;
+
+            const versionList = missingVersions.map(v => `- ${v.version}`).join('\n');
+
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `New STM32CubeCLT versions detected: ${count} version(s)`,
+              body: `**${count} new STM32CubeCLT version(s)** have been detected and are being built automatically.\n\n## Missing versions:\n${versionList}\n\n## Latest version:\n**${latestVersion}**\n\n## Status:\n🔨 Building...\n\n## Links:\n- [ST Download Page](https://www.st.com/en/development-tools/stm32cubeclt.html)\n- [Build Workflow](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/workflows/build-all-versions.yml)\n\n**Note:** ST account credentials are required for building. Make sure \`ST_USERNAME\` and \`ST_PASSWORD\` secrets are up to date.\n\nThis issue was created automatically by the weekly version check workflow.`,
+              labels: ['automation', 'new-version', 'building']
+            });
+
+            console.log(`Issue created: #${issue.data.number}`);
+            return issue.data.number;
+
+      - name: No new versions
+        if: steps.missing-versions.outputs.count == 0
+        run: |
+          echo "No new versions detected. Current latest: ${{ steps.st-versions.outputs.latest }}"
