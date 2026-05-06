@@ -48,4 +48,3 @@ build-logs/
 # Node.js 종속성
 node_modules/
 package-lock.json
-!.github/scripts/package-lock.json

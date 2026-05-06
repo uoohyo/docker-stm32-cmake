@@ -53,9 +53,6 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install scraper dependencies
-        run: npm ci --prefix .github/scripts
-
       - name: Get all versions from ST
         id: st-versions
         run: |
