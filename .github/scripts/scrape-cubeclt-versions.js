@@ -18,6 +18,8 @@ const HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Apple
 // Known STM32CubeCLT versions (manually maintained as fallback)
 // This list should be updated when new versions are released
 const KNOWN_VERSIONS = [
+  { version: '1.21.0', release_date: '2026-02', linux_supported: true },
+  { version: '1.20.0', release_date: '2025-11', linux_supported: true },
   { version: '1.16.0', release_date: '2024-06', linux_supported: true },
   { version: '1.15.1', release_date: '2024-03', linux_supported: true },
   { version: '1.15.0', release_date: '2024-01', linux_supported: true },
@@ -45,10 +47,16 @@ function extractVersionsFromHTML(html) {
 
   // Try different patterns that ST might use
   const patterns = [
+    // data-software-release attribute (most reliable)
+    /data-software-release="(\d+\.\d+\.\d+)"/gi,
+    // data-version attribute
+    /data-version="(\d+\.\d+\.\d+)"/gi,
+    // Version in div class versionoption
+    /<div class="versionoption">\s*(\d+\.\d+\.\d+)/gi,
     // Version in download links or text
     /(?:STM32CubeCLT|stm32cubeclt)[_-]?v?(\d+\.\d+\.\d+)/gi,
     // Version in URLs
-    /\/(\d+\.\d+\.\d+)\//g,
+    /version=(\d+\.\d+\.\d+)/gi,
     // Standalone version numbers
     /Version\s+(\d+\.\d+\.\d+)/gi,
   ];
