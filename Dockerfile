@@ -99,11 +99,41 @@ RUN echo ">>> Installing system dependencies..." && \
 # Copy extracted STM32CubeCLT from downloader stage
 COPY --from=downloader /cubeclt_installer /opt/cubeclt-installer
 
+# Install STM32CubeCLT
+RUN echo ">>> Installing STM32CubeCLT ${CUBECLT_VERSION}..." && \
+    mkdir -p /opt/st/stm32cubeclt && \
+    cd /opt/cubeclt-installer && \
+    INSTALLER=$(find . -maxdepth 2 -name "*.sh" -o -name "*.run" | head -1) && \
+    if [ -n "$INSTALLER" ]; then \
+        echo ">>> Found installer: $INSTALLER"; \
+        chmod +x "$INSTALLER"; \
+        EXTRACT_DIR="/tmp/stm32cubeclt-extract"; \
+        mkdir -p "$EXTRACT_DIR"; \
+        "$INSTALLER" --target "$EXTRACT_DIR" --noexec && \
+        echo ">>> Extraction complete, copying files..."; \
+        if [ -d "$EXTRACT_DIR/STM32CubeCLT" ]; then \
+            cp -r "$EXTRACT_DIR/STM32CubeCLT"/* /opt/st/stm32cubeclt/; \
+        elif [ -d "$EXTRACT_DIR" ] && [ "$(ls -A $EXTRACT_DIR)" ]; then \
+            cp -r "$EXTRACT_DIR"/* /opt/st/stm32cubeclt/; \
+        fi; \
+        rm -rf "$EXTRACT_DIR"; \
+    elif [ -d "STM32CubeCLT" ]; then \
+        echo ">>> Found extracted directory, copying..."; \
+        cp -r STM32CubeCLT/* /opt/st/stm32cubeclt/; \
+    else \
+        echo ">>> Copying all installer files..."; \
+        cp -r . /opt/st/stm32cubeclt/; \
+    fi && \
+    rm -rf /opt/cubeclt-installer && \
+    echo ">>> Verifying installation..." && \
+    ([ -d "/opt/st/stm32cubeclt/GNU-tools-for-STM32" ] && echo "  ✓ GNU ARM Toolchain found" || echo "  ⚠ GNU ARM Toolchain not found") && \
+    ([ -d "/opt/st/stm32cubeclt/STM32CubeProgrammer" ] && echo "  ✓ STM32CubeProgrammer found" || echo "  ⚠ STM32CubeProgrammer not found") && \
+    echo ">>> Installation complete"
+
 # Working Directory
 WORKDIR /workspace
 
-# STM32CubeCLT installation will be done in entrypoint.sh
-# Set up PATH for common STM32CubeCLT tools (paths will be verified in entrypoint)
+# Set up PATH for STM32CubeCLT tools
 ENV PATH="/opt/st/stm32cubeclt/STM32CubeProgrammer/bin:${PATH}"
 ENV PATH="/opt/st/stm32cubeclt/STM32CubeMX:${PATH}"
 ENV PATH="/opt/st/stm32cubeclt/GNU-tools-for-STM32/bin:${PATH}"
