@@ -1,0 +1,219 @@
+name: Build All STM32CubeCLT Versions
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: 'Versions to build (JSON array, leave empty for auto-detect)'
+        required: false
+        default: ''
+      push_to_registry:
+        description: 'Push to Docker Hub'
+        type: boolean
+        required: false
+        default: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  detect-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.parse.outputs.versions }}
+      build_versions: ${{ steps.parse.outputs.build_versions }}
+      latest_version: ${{ steps.parse.outputs.latest_version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        if: github.event.inputs.versions == ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Parse STM32CubeCLT versions
+        id: parse
+        run: |
+          # Use manual input if provided
+          if [ -n "${{ github.event.inputs.versions }}" ]; then
+            VERSIONS='${{ github.event.inputs.versions }}'
+          else
+            VERSIONS=$(bash .github/scripts/parse-versions.sh)
+          fi
+
+          # All versions (for documentation)
+          DELIMITER=$(openssl rand -hex 8)
+          { echo "versions<<${DELIMITER}"; echo "${VERSIONS}"; echo "${DELIMITER}"; } >> $GITHUB_OUTPUT
+
+          # Linux-supported versions only (for the build matrix), sorted oldest-first
+          BUILD_VERSIONS=$(echo "$VERSIONS" | jq '[.[] | select(.linux_supported == true)] | sort_by([.major, .minor, .patch] | map(tonumber))')
+          DELIMITER2=$(openssl rand -hex 8)
+          { echo "build_versions<<${DELIMITER2}"; echo "${BUILD_VERSIONS}"; echo "${DELIMITER2}"; } >> $GITHUB_OUTPUT
+
+          # Latest = highest version (last after ascending sort)
+          LATEST=$(echo "$BUILD_VERSIONS" | jq -r '.[-1].version')
+          echo "latest_version=${LATEST}" >> $GITHUB_OUTPUT
+
+          echo "Total versions: $(echo "$VERSIONS" | jq '. | length')"
+          echo "Linux-supported: $(echo "$BUILD_VERSIONS" | jq '. | length')"
+          echo "Latest: ${LATEST}"
+
+  build-and-push:
+    needs: detect-versions
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1  # Build one at a time to avoid ST rate limiting
+      matrix:
+        version_info: ${{ fromJson(needs.detect-versions.outputs.build_versions) }}
+      fail-fast: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: github.event.inputs.push_to_registry != 'false'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Validate ST credentials
+        run: |
+          if [ -z "${{ secrets.ST_USERNAME }}" ] || [ -z "${{ secrets.ST_PASSWORD }}" ]; then
+            echo "::error::ST_USERNAME and ST_PASSWORD secrets must be set"
+            exit 1
+          fi
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          build-args: |
+            CUBECLT_VERSION=${{ matrix.version_info.version }}
+            ST_USERNAME=${{ secrets.ST_USERNAME }}
+            ST_PASSWORD=${{ secrets.ST_PASSWORD }}
+          tags: |
+            uoohyo/stm32cubeclt:${{ matrix.version_info.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+          secrets: |
+            ST_USERNAME=${{ secrets.ST_USERNAME }}
+            ST_PASSWORD=${{ secrets.ST_PASSWORD }}
+
+      - name: Test Docker image
+        run: |
+          echo "Testing STM32CubeCLT ${{ matrix.version_info.version }}..."
+          docker run --rm uoohyo/stm32cubeclt:${{ matrix.version_info.version }} bash -c "
+            if command -v arm-none-eabi-gcc &> /dev/null; then
+              echo '✓ ARM GCC found';
+              arm-none-eabi-gcc --version | head -1;
+            else
+              echo '✗ ARM GCC not found';
+              exit 1;
+            fi
+          "
+
+      - name: Push to Docker Hub
+        if: github.event.inputs.push_to_registry != 'false' && success()
+        run: |
+          docker push uoohyo/stm32cubeclt:${{ matrix.version_info.version }}
+          echo "✓ Pushed uoohyo/stm32cubeclt:${{ matrix.version_info.version }}"
+
+  tag-latest:
+    needs: [detect-versions, build-and-push]
+    runs-on: ubuntu-latest
+    if: '!cancelled() && github.event.inputs.push_to_registry != ''false'''
+    steps:
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Tag and push latest
+        run: |
+          BUILT_VERSION="${{ needs.detect-versions.outputs.latest_version }}"
+
+          # Fetch all existing tags from Docker Hub to find actual latest
+          EXISTING_TAGS=$(curl -s "https://hub.docker.com/v2/repositories/uoohyo/stm32cubeclt/tags?page_size=100" \
+            | jq -r '.results[].name' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' || echo "")
+
+          # Combine existing tags with the version just built
+          ALL_TAGS=$(printf "%s\n%s" "$EXISTING_TAGS" "$BUILT_VERSION" | grep -v '^$')
+
+          # Find actual latest by version sort
+          ACTUAL_LATEST=$(echo "$ALL_TAGS" | sort -V | tail -1)
+
+          echo "Built version: ${BUILT_VERSION}"
+          echo "Actual latest across all tags: ${ACTUAL_LATEST}"
+
+          docker pull uoohyo/stm32cubeclt:${ACTUAL_LATEST}
+          docker tag uoohyo/stm32cubeclt:${ACTUAL_LATEST} uoohyo/stm32cubeclt:latest
+          docker push uoohyo/stm32cubeclt:latest
+
+  handle-failure:
+    needs: [detect-versions, build-and-push]
+    runs-on: ubuntu-latest
+    if: failure() && !cancelled()
+    permissions:
+      issues: write
+    steps:
+      - name: Mark building issue as failed
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            // Find open issues with "building" label
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'building'
+            });
+
+            if (issues.data.length === 0) {
+              console.log('No building issues found');
+              return;
+            }
+
+            // Process each building issue
+            for (const issue of issues.data) {
+              console.log(`Marking issue #${issue.number} as failed`);
+
+              // Add failure comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `❌ **Build failed**\n\nSome versions failed to build. Please check the [workflow run](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) for details.\n\n**Common issues:**\n- ST credentials expired or invalid\n- Version not available on ST website\n- Network timeout\n\nThis issue will remain open for investigation.`
+              });
+
+              // Add "failed" label
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ['failed']
+              });
+
+              // Remove "building" label
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                name: 'building'
+              });
+
+              console.log(`Issue #${issue.number} marked as failed`);
+            }
