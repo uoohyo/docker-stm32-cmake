@@ -38,7 +38,13 @@ function esc(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 function launchBrowser() {
   return puppeteer.launch({
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-blink-features=AutomationControlled',
+    ],
   });
 }
 
@@ -82,6 +88,10 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
   const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
+    // Hide headless Chrome indicators
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    });
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
     // Navigate to CAS login (service= param ties the ticket to www.st.com)
@@ -101,16 +111,27 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
       const btn = await page.$('input[type="submit"], button[type="submit"]');
       console.error(`  Submit button found: ${!!btn}`);
 
-      console.error('  Clicking submit and waiting for URL to leave my.st.com...');
+      console.error('  Clicking submit...');
       await page.evaluate(() => {
         const btn = document.querySelector('input[type="submit"], button[type="submit"]');
         if (btn) btn.click();
       });
-      // Poll until URL leaves my.st.com (works with all Puppeteer versions)
+
+      // Wait 3s then check page state before polling
+      await new Promise(r => setTimeout(r, 3000));
+      const pageTitle = await page.title();
+      const errorText = await page.evaluate(() => {
+        const el = document.querySelector('.error-message, .alert, [class*="error"], [id*="error"], .cas__login-error');
+        return el ? el.innerText.trim() : null;
+      });
+      console.error(`  Page title after click: "${pageTitle}"`);
+      if (errorText) console.error(`  Error on page: "${errorText}"`);
+
+      // Poll until URL leaves my.st.com
       const deadline = Date.now() + 120000;
       while (page.url().includes('my.st.com') && Date.now() < deadline) {
-        await new Promise(r => setTimeout(r, 1000));
-        console.error(`  Current URL: ${page.url()}`);
+        await new Promise(r => setTimeout(r, 2000));
+        console.error(`  URL: ${page.url()}`);
       }
       if (page.url().includes('my.st.com')) {
         throw new Error('Timed out waiting for redirect from my.st.com after login');
