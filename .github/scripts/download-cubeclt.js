@@ -98,7 +98,7 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
       await page.type('input[name="password"]', PASSWORD, { delay: 30 });
 
       await Promise.all([
-        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 90000 }),
+        page.waitForNavigation({ waitUntil: 'load', timeout: 90000 }),
         page.evaluate(() => {
           const btn = document.querySelector('input[type="submit"], button[type="submit"]');
           if (btn) btn.click();
