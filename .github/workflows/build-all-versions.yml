@@ -81,21 +81,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
-        if: github.event.inputs.push_to_registry != 'false'
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-        run: |
-          # Bypass docker login entirely — macOS Keychain is inaccessible from
-          # LaunchAgent context. Write base64 auth directly into a temp config.
-          DOCKER_DIR="$RUNNER_TEMP/.docker-ci"
-          mkdir -p "$DOCKER_DIR"
-          AUTH=$(printf '%s:%s' "$DOCKERHUB_USERNAME" "$DOCKERHUB_TOKEN" | base64 | tr -d '\n')
-          printf '{"auths":{"https://index.docker.io/v1/":{"auth":"%s"}}}\n' "$AUTH" > "$DOCKER_DIR/config.json"
-          echo "DOCKER_CONFIG=$DOCKER_DIR" >> "$GITHUB_ENV"
-          echo "✓ Docker Hub credentials written to $DOCKER_DIR/config.json"
-
       - name: Setup Node.js for downloader
         uses: actions/setup-node@v4
         with:
