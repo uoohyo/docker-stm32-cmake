@@ -38,7 +38,13 @@ function esc(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 function launchBrowser() {
   return puppeteer.launch({
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-blink-features=AutomationControlled',
+    ],
   });
 }
 
@@ -82,25 +88,32 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
   const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
+    // Hide headless Chrome indicators
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    });
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
     // Navigate to CAS login (service= param ties the ticket to www.st.com)
+    // Use 'load' not 'networkidle2' — ST login page has persistent background
+    // requests that prevent networkidle2 from ever firing.
     console.error('Navigating to CAS login...');
-    await page.goto(casLoginUrl, { waitUntil: 'networkidle2', timeout: 90000 });
+    await page.goto(casLoginUrl, { waitUntil: 'load', timeout: 90000 });
     console.error(`  URL: ${page.url()}`);
 
     if (page.url().includes('my.st.com')) {
-      // Fill in credentials
-      await page.waitForSelector('input[name="username"]', { timeout: 15000 });
-      await page.type('input[name="username"]', USERNAME, { delay: 30 });
-      await page.type('input[name="password"]', PASSWORD, { delay: 30 });
+      console.error('  Waiting for username input...');
+      await page.waitForSelector('input[name="username"]', { timeout: 30000 });
+      console.error('  Typing credentials...');
+      await page.click('input[name="username"]');
+      await page.type('input[name="username"]', USERNAME, { delay: 50 });
+      await page.click('input[name="password"]');
+      await page.type('input[name="password"]', PASSWORD, { delay: 50 });
 
+      console.error('  Submitting via Enter key...');
       await Promise.all([
-        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 90000 }),
-        page.evaluate(() => {
-          const btn = document.querySelector('input[type="submit"], button[type="submit"]');
-          if (btn) btn.click();
-        }),
+        page.waitForNavigation({ waitUntil: 'load', timeout: 90000 }),
+        page.keyboard.press('Enter'),
       ]);
 
       console.error(`  After login URL: ${page.url()}`);
