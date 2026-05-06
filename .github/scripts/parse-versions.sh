@@ -12,7 +12,7 @@ if ! command -v node &> /dev/null; then
 fi
 
 echo "Scraping STM32CubeCLT versions from ST website..." >&2
-if ! SCRAPED=$(node "${SCRIPT_DIR}/scrape-cubeclt-versions.js" 2>/dev/null) || [ -z "$SCRAPED" ]; then
+if ! SCRAPED=$(node "${SCRIPT_DIR}/scrape-cubeclt-versions.js") || [ -z "$SCRAPED" ]; then
     echo "Error: Failed to scrape STM32CubeCLT versions from ST website" >&2
     exit 1
 fi

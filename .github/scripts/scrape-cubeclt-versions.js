@@ -1,114 +1,117 @@
 #!/usr/bin/env node
 /**
- * Scrape STM32CubeCLT versions from ST website.
+ * Scrape all STM32CubeCLT-Lnx versions from ST website using a headless browser.
  *
  * Strategy:
- *   1. Fetch the STM32CubeCLT product page
- *   2. Extract version information from the page content
- *   3. For each version, determine if it's downloadable (requires ST account)
+ *   1. Navigate to the STM32CubeCLT product page (headless Chrome via Puppeteer).
+ *   2. Wait for the get-software table SDI fragment to load.
+ *   3. Click the "Select version" button in the STM32CubeCLT-Lnx row to trigger
+ *      the inline scripts that populate data-software-release attributes.
+ *   4. Extract all versions from the dropdown's gscontent elements.
  *
- * Note: ST requires authentication for downloads, so we can only detect
- * versions from the public page. Actual download availability is validated
- * separately using ST credentials.
+ * Why Puppeteer: ST's version list is rendered by inline <script> blocks that only
+ * execute after the page's get-software JS initialises them. A plain HTTP fetch only
+ * returns the latest version; the full dropdown requires JavaScript execution.
  */
 
+const puppeteer = require('puppeteer');
+
 const ST_CUBECLT_PAGE = 'https://www.st.com/en/development-tools/stm32cubeclt.html';
-const HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
-
-
-async function fetchText(url, timeoutMs = 30000) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { headers: HEADERS, signal: ctrl.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.text();
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function extractVersionsFromHTML(html) {
-  const versions = new Set();
-
-  // Try different patterns that ST might use
-  const patterns = [
-    // data-software-release attribute (most reliable)
-    /data-software-release="(\d+\.\d+\.\d+)"/gi,
-    // data-version attribute
-    /data-version="(\d+\.\d+\.\d+)"/gi,
-    // Version in div class versionoption
-    /<div class="versionoption">\s*(\d+\.\d+\.\d+)/gi,
-    // Version in download links or text
-    /(?:STM32CubeCLT|stm32cubeclt)[_-]?v?(\d+\.\d+\.\d+)/gi,
-    // Version in URLs
-    /version=(\d+\.\d+\.\d+)/gi,
-    // Standalone version numbers
-    /Version\s+(\d+\.\d+\.\d+)/gi,
-  ];
-
-  for (const pattern of patterns) {
-    pattern.lastIndex = 0;
-    let match;
-    while ((match = pattern.exec(html)) !== null) {
-      const version = match[1];
-      // Validate version format (X.Y.Z)
-      if (/^\d+\.\d+\.\d+$/.test(version)) {
-        versions.add(version);
-      }
-    }
-  }
-
-  return Array.from(versions);
-}
 
 async function scrapeVersions() {
-  console.error(`Fetching ${ST_CUBECLT_PAGE}...`);
-
-  const html = await fetchText(ST_CUBECLT_PAGE);
-  const scrapedVersions = extractVersionsFromHTML(html);
-
-  if (scrapedVersions.length === 0) {
-    throw new Error('No versions found on ST website. Check if the page structure has changed.');
-  }
-
-  console.error(`✓ Successfully scraped ${scrapedVersions.length} versions from ST website`);
-
-  // Convert to version objects
-  const versionList = scrapedVersions.map(version => {
-    const [major, minor, patch] = version.split('.');
-    return {
-      version,
-      major,
-      minor,
-      patch,
-      linux_supported: true,
-      requires_auth: true,
-    };
+  console.error('Launching headless browser...');
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+    ],
   });
 
-  // Sort newest first
-  versionList.sort((a, b) => {
-    const av = [a.major, a.minor, a.patch].map(Number);
-    const bv = [b.major, b.minor, b.patch].map(Number);
-    for (let i = 0; i < 3; i++) {
-      if (av[i] !== bv[i]) return bv[i] - av[i];
+  try {
+    const page = await browser.newPage();
+    await page.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    );
+
+    console.error(`Navigating to ${ST_CUBECLT_PAGE}...`);
+    await page.goto(ST_CUBECLT_PAGE, { waitUntil: 'networkidle2', timeout: 60000 });
+
+    // Wait for the SDI get-software table fragment to inject the product row
+    console.error('Waiting for STM32CubeCLT-Lnx product row...');
+    await page.waitForSelector('[data-product-rpn="STM32CubeCLT-Lnx"]', { timeout: 30000 });
+
+    // Click the "Select version" button in the STM32CubeCLT-Lnx row.
+    // This triggers initSoftwareButtons which runs the inline scripts that
+    // set data-software-release on each gscontent element in the dropdown.
+    const clicked = await page.evaluate(() => {
+      const td = document.querySelector('[data-product-rpn="STM32CubeCLT-Lnx"]');
+      const row = td && td.closest('tr');
+      const btn = row && row.querySelector('.msw-selectversionbutton');
+      if (btn) { btn.click(); return true; }
+      return false;
+    });
+
+    if (!clicked) {
+      throw new Error(
+        'Could not find the "Select version" button for STM32CubeCLT-Lnx. ' +
+        'The page structure may have changed.'
+      );
     }
-    return 0;
-  });
 
-  // Mark the newest as is_latest
-  if (versionList.length > 0) {
+    // Wait until the inline scripts have populated data-software-release on the
+    // gscontent elements inside the dropdown (up to 10 s).
+    await page.waitForFunction(
+      () => {
+        const content = document.querySelector(
+          '.msw-selectversionbutton-content[data-id="CP543472"]'
+        );
+        return content && content.querySelectorAll('.gscontent[data-software-release]').length > 0;
+      },
+      { timeout: 10000 }
+    );
+
+    const versions = await page.evaluate(() => {
+      const content = document.querySelector(
+        '.msw-selectversionbutton-content[data-id="CP543472"]'
+      );
+      return [...content.querySelectorAll('.gscontent[data-software-release]')]
+        .map(el => el.getAttribute('data-software-release'))
+        .filter(v => /^\d+\.\d+\.\d+$/.test(v));
+    });
+
+    if (versions.length === 0) {
+      throw new Error('Dropdown was found but contained no version entries.');
+    }
+
+    const unique = [...new Set(versions)];
+    console.error(`✓ Found ${unique.length} STM32CubeCLT-Lnx versions`);
+
+    const versionList = unique.map(version => {
+      const [major, minor, patch] = version.split('.').map(Number);
+      return { version, major, minor, patch, linux_supported: true, requires_auth: true };
+    });
+
+    // Sort newest first
+    versionList.sort((a, b) => {
+      for (const k of ['major', 'minor', 'patch']) {
+        if (a[k] !== b[k]) return b[k] - a[k];
+      }
+      return 0;
+    });
+
     versionList[0].is_latest = true;
+    console.error(`Latest version: ${versionList[0].version}`);
+
+    console.log(JSON.stringify(versionList));
+  } finally {
+    await browser.close();
   }
-
-  console.error(`Total versions detected: ${versionList.length}`);
-  console.error(`Latest version: ${versionList[0].version}`);
-
-  console.log(JSON.stringify(versionList));
 }
 
 scrapeVersions().catch(e => {
-  console.error('Fatal error:', e);
+  console.error('Fatal error:', e.message);
   process.exit(1);
 });
