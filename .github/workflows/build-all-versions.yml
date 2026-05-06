@@ -35,6 +35,10 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Install scraper dependencies
+        if: github.event.inputs.versions == ''
+        run: npm ci --prefix .github/scripts
+
       - name: Parse STM32CubeCLT versions
         id: parse
         run: |
