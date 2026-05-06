@@ -68,7 +68,7 @@ jobs:
 
   build-and-push:
     needs: detect-versions
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     strategy:
       max-parallel: 1  # Build one at a time to avoid ST rate limiting
       matrix:
@@ -102,9 +102,11 @@ jobs:
           ST_USERNAME: ${{ secrets.ST_USERNAME }}
           ST_PASSWORD: ${{ secrets.ST_PASSWORD }}
           OUTPUT_DIR: cubeclt_download
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
+          if [ -z "$ST_USERNAME" ] || [ -z "$ST_PASSWORD" ]; then
+            echo "::error::ST_USERNAME and ST_PASSWORD secrets must be set"
+            exit 1
+          fi
           mkdir -p cubeclt_download
           node .github/scripts/download-cubeclt.js
 
