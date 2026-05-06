@@ -101,14 +101,9 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
       const btn = await page.$('input[type="submit"], button[type="submit"]');
       console.error(`  Submit button found: ${!!btn}`);
 
-      console.error('  Clicking submit and waiting for navigation...');
-      await Promise.all([
-        page.waitForNavigation({ waitUntil: 'load', timeout: 90000 }),
-        page.evaluate(() => {
-          const btn = document.querySelector('input[type="submit"], button[type="submit"]');
-          if (btn) btn.click();
-        }),
-      ]);
+      console.error('  Clicking submit and waiting for URL to leave my.st.com...');
+      await page.click('input[type="submit"], button[type="submit"]');
+      await page.waitForURL(url => !url.includes('my.st.com'), { timeout: 120000, waitUntil: 'load' });
 
       console.error(`  After login URL: ${page.url()}`);
       if (page.url().includes('my.st.com') || page.url().includes('cas/login')) {
