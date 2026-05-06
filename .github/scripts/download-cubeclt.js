@@ -104,45 +104,17 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
     if (page.url().includes('my.st.com')) {
       console.error('  Waiting for username input...');
       await page.waitForSelector('input[name="username"]', { timeout: 30000 });
-
-      // Dump form HTML to understand structure
-      const formHtml = await page.evaluate(() => {
-        const form = document.querySelector('form');
-        return form ? form.outerHTML.substring(0, 3000) : 'No form found';
-      });
-      console.error(`  Form HTML snippet:\n${formHtml}\n`);
-
-      console.error('  Clicking and typing credentials...');
+      console.error('  Typing credentials...');
       await page.click('input[name="username"]');
       await page.type('input[name="username"]', USERNAME, { delay: 50 });
       await page.click('input[name="password"]');
       await page.type('input[name="password"]', PASSWORD, { delay: 50 });
 
-      const btn = await page.$('input[type="submit"], button[type="submit"]');
-      console.error(`  Submit button found: ${!!btn}`);
-
       console.error('  Submitting via Enter key...');
-      await page.keyboard.press('Enter');
-
-      // Wait 3s then check page state before polling
-      await new Promise(r => setTimeout(r, 3000));
-      const pageTitle = await page.title();
-      const errorText = await page.evaluate(() => {
-        const el = document.querySelector('.error-message, .alert, [class*="error"], [id*="error"], .cas__login-error');
-        return el ? el.innerText.trim() : null;
-      });
-      console.error(`  Page title after click: "${pageTitle}"`);
-      if (errorText) console.error(`  Error on page: "${errorText}"`);
-
-      // Poll until URL leaves my.st.com
-      const deadline = Date.now() + 120000;
-      while (page.url().includes('my.st.com') && Date.now() < deadline) {
-        await new Promise(r => setTimeout(r, 2000));
-        console.error(`  URL: ${page.url()}`);
-      }
-      if (page.url().includes('my.st.com')) {
-        throw new Error('Timed out waiting for redirect from my.st.com after login');
-      }
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'load', timeout: 90000 }),
+        page.keyboard.press('Enter'),
+      ]);
 
       console.error(`  After login URL: ${page.url()}`);
       if (page.url().includes('my.st.com') || page.url().includes('cas/login')) {
