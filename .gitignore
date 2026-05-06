@@ -32,6 +32,7 @@ $RECYCLE.BIN/
 
 # Docker 관련
 build-logs/
+cubeclt_download/
 *.tar
 *.tar.gz
 
@@ -48,3 +49,4 @@ build-logs/
 # Node.js 종속성
 node_modules/
 package-lock.json
+!.github/scripts/package-lock.json

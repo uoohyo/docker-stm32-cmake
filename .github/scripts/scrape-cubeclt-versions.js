@@ -1,114 +1,119 @@
 #!/usr/bin/env node
 /**
- * Scrape STM32CubeCLT versions from ST website.
+ * Scrape all STM32CubeCLT-Lnx versions from ST website using a headless browser.
  *
  * Strategy:
- *   1. Fetch the STM32CubeCLT product page
- *   2. Extract version information from the page content
- *   3. For each version, determine if it's downloadable (requires ST account)
+ *   1. Launch Puppeteer (Chrome network stack — passes ST's TLS/IP checks).
+ *   2. Navigate directly to the sw-versions-nli.html fragment URL.
+ *      This static HTML contains every available release.
+ *   3. Parse versions from data-reg-required-link-path attributes:
+ *        product=STM32CubeCLT-Lnx.version=X.Y.Z.html
+ *   4. Retry up to MAX_RETRIES times (fresh browser per attempt).
  *
- * Note: ST requires authentication for downloads, so we can only detect
- * versions from the public page. Actual download availability is validated
- * separately using ST credentials.
+ * Why Puppeteer: plain Node.js fetch and sub-resource loading are both
+ * rejected by ST's servers in CI (data-center IPs / TLS fingerprinting).
+ * A direct Chrome navigation passes because it sends a full browser
+ * TLS fingerprint and request-header set.
  */
 
-const ST_CUBECLT_PAGE = 'https://www.st.com/en/development-tools/stm32cubeclt.html';
-const HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
+const puppeteer = require('puppeteer');
 
+const ST_VERSIONS_URL = 'https://www.st.com/content/st_com/en/products/development-tools/software-development-tools/stm32-software-development-tools/stm32-ides/stm32cubeclt.sw-versions-nli.html';
+const MAX_RETRIES = 3;
+const NAV_TIMEOUT = 120000; // 2 min
 
-async function fetchText(url, timeoutMs = 30000) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+// ---------------------------------------------------------------------------
+// Single attempt: navigate directly to the versions fragment URL
+// ---------------------------------------------------------------------------
+async function attemptScrape(attempt) {
+  console.error(`[Attempt ${attempt}] Launching headless browser...`);
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+    ],
+  });
+
   try {
-    const res = await fetch(url, { headers: HEADERS, signal: ctrl.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.text();
+    const page = await browser.newPage();
+    await page.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    );
+    await page.setExtraHTTPHeaders({
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.5',
+      'Referer': 'https://www.st.com/en/development-tools/stm32cubeclt.html',
+    });
+
+    console.error(`[Attempt ${attempt}] Navigating to versions URL...`);
+    const response = await page.goto(ST_VERSIONS_URL, { waitUntil: 'networkidle2', timeout: NAV_TIMEOUT });
+    if (!response || !response.ok()) {
+      throw new Error(`HTTP ${response?.status() ?? 'no response'}`);
+    }
+
+    const html = await response.text();
+    console.error(`[Attempt ${attempt}] Received ${html.length} bytes`);
+
+    const versions = [...new Set(
+      [...html.matchAll(/product=STM32CubeCLT-Lnx\.version=(\d+\.\d+\.\d+)\.html/g)]
+        .map(m => m[1])
+    )];
+
+    if (versions.length === 0) throw new Error('No STM32CubeCLT-Lnx versions found in response');
+
+    console.error(`[Attempt ${attempt}] ✓ Found ${versions.length} versions`);
+    return versions;
   } finally {
-    clearTimeout(timer);
+    await browser.close();
   }
 }
 
-function extractVersionsFromHTML(html) {
-  const versions = new Set();
+// ---------------------------------------------------------------------------
+// Main: retry loop
+// ---------------------------------------------------------------------------
+async function scrapeVersions() {
+  let lastError;
 
-  // Try different patterns that ST might use
-  const patterns = [
-    // data-software-release attribute (most reliable)
-    /data-software-release="(\d+\.\d+\.\d+)"/gi,
-    // data-version attribute
-    /data-version="(\d+\.\d+\.\d+)"/gi,
-    // Version in div class versionoption
-    /<div class="versionoption">\s*(\d+\.\d+\.\d+)/gi,
-    // Version in download links or text
-    /(?:STM32CubeCLT|stm32cubeclt)[_-]?v?(\d+\.\d+\.\d+)/gi,
-    // Version in URLs
-    /version=(\d+\.\d+\.\d+)/gi,
-    // Standalone version numbers
-    /Version\s+(\d+\.\d+\.\d+)/gi,
-  ];
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const versions = await attemptScrape(attempt);
 
-  for (const pattern of patterns) {
-    pattern.lastIndex = 0;
-    let match;
-    while ((match = pattern.exec(html)) !== null) {
-      const version = match[1];
-      // Validate version format (X.Y.Z)
-      if (/^\d+\.\d+\.\d+$/.test(version)) {
-        versions.add(version);
+      const versionList = versions.map(version => {
+        const [major, minor, patch] = version.split('.').map(Number);
+        return { version, major, minor, patch, linux_supported: true, requires_auth: true };
+      });
+
+      versionList.sort((a, b) => {
+        for (const k of ['major', 'minor', 'patch']) {
+          if (a[k] !== b[k]) return b[k] - a[k];
+        }
+        return 0;
+      });
+
+      versionList[0].is_latest = true;
+      console.error(`Latest version: ${versionList[0].version}`);
+      console.error(`Total versions: ${versionList.length}`);
+
+      console.log(JSON.stringify(versionList));
+      return;
+    } catch (e) {
+      lastError = e;
+      console.error(`[Attempt ${attempt}] Failed: ${e.message}`);
+      if (attempt < MAX_RETRIES) {
+        const delay = attempt * 10000;
+        console.error(`Retrying in ${delay / 1000}s...`);
+        await new Promise(r => setTimeout(r, delay));
       }
     }
   }
 
-  return Array.from(versions);
-}
-
-async function scrapeVersions() {
-  console.error(`Fetching ${ST_CUBECLT_PAGE}...`);
-
-  const html = await fetchText(ST_CUBECLT_PAGE);
-  const scrapedVersions = extractVersionsFromHTML(html);
-
-  if (scrapedVersions.length === 0) {
-    throw new Error('No versions found on ST website. Check if the page structure has changed.');
-  }
-
-  console.error(`✓ Successfully scraped ${scrapedVersions.length} versions from ST website`);
-
-  // Convert to version objects
-  const versionList = scrapedVersions.map(version => {
-    const [major, minor, patch] = version.split('.');
-    return {
-      version,
-      major,
-      minor,
-      patch,
-      linux_supported: true,
-      requires_auth: true,
-    };
-  });
-
-  // Sort newest first
-  versionList.sort((a, b) => {
-    const av = [a.major, a.minor, a.patch].map(Number);
-    const bv = [b.major, b.minor, b.patch].map(Number);
-    for (let i = 0; i < 3; i++) {
-      if (av[i] !== bv[i]) return bv[i] - av[i];
-    }
-    return 0;
-  });
-
-  // Mark the newest as is_latest
-  if (versionList.length > 0) {
-    versionList[0].is_latest = true;
-  }
-
-  console.error(`Total versions detected: ${versionList.length}`);
-  console.error(`Latest version: ${versionList[0].version}`);
-
-  console.log(JSON.stringify(versionList));
+  throw lastError;
 }
 
 scrapeVersions().catch(e => {
-  console.error('Fatal error:', e);
+  console.error('Fatal error:', e.message);
   process.exit(1);
 });
