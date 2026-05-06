@@ -2,18 +2,16 @@
 /**
  * Scrape STM32CubeCLT versions from ST website.
  *
- * Strategy:
- *   1. Fetch the STM32CubeCLT product page
- *   2. Extract version information from the page content
- *   3. For each version, determine if it's downloadable (requires ST account)
- *
- * Note: ST requires authentication for downloads, so we can only detect
- * versions from the public page. Actual download availability is validated
- * separately using ST credentials.
+ * Targets gscontent divs with data-software-prmis-itemname="STM32CubeCLT-Lnx"
+ * to extract data-software-release version numbers from the same opening tag.
  */
 
 const ST_CUBECLT_PAGE = 'https://www.st.com/en/development-tools/stm32cubeclt.html';
-const HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
+const HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.5',
+};
 
 
 async function fetchText(url, timeoutMs = 30000) {
@@ -29,37 +27,28 @@ async function fetchText(url, timeoutMs = 30000) {
 }
 
 function extractVersionsFromHTML(html) {
-  const versions = new Set();
+  const seen = new Set();
+  const versions = [];
 
-  // Try different patterns that ST might use
-  const patterns = [
-    // data-software-release attribute (most reliable)
-    /data-software-release="(\d+\.\d+\.\d+)"/gi,
-    // data-version attribute
-    /data-version="(\d+\.\d+\.\d+)"/gi,
-    // Version in div class versionoption
-    /<div class="versionoption">\s*(\d+\.\d+\.\d+)/gi,
-    // Version in download links or text
-    /(?:STM32CubeCLT|stm32cubeclt)[_-]?v?(\d+\.\d+\.\d+)/gi,
-    // Version in URLs
-    /version=(\d+\.\d+\.\d+)/gi,
-    // Standalone version numbers
-    /Version\s+(\d+\.\d+\.\d+)/gi,
-  ];
+  // Match opening div tags that contain data-software-prmis-itemname="STM32CubeCLT-Lnx".
+  // Both the product name and version attributes live on the same opening tag, so we
+  // only read as far as the first ">" — no cross-tag leakage is possible.
+  const tagPattern = /<div[^>]*data-software-prmis-itemname="STM32CubeCLT-Lnx"[^>]*>/gi;
+  const releaseAttr = /data-software-release="(\d+\.\d+\.\d+)"/i;
 
-  for (const pattern of patterns) {
-    pattern.lastIndex = 0;
-    let match;
-    while ((match = pattern.exec(html)) !== null) {
-      const version = match[1];
-      // Validate version format (X.Y.Z)
-      if (/^\d+\.\d+\.\d+$/.test(version)) {
-        versions.add(version);
+  let tagMatch;
+  while ((tagMatch = tagPattern.exec(html)) !== null) {
+    const releaseMatch = releaseAttr.exec(tagMatch[0]);
+    if (releaseMatch) {
+      const version = releaseMatch[1];
+      if (!seen.has(version)) {
+        seen.add(version);
+        versions.push(version);
       }
     }
   }
 
-  return Array.from(versions);
+  return versions;
 }
 
 async function scrapeVersions() {
@@ -69,14 +58,16 @@ async function scrapeVersions() {
   const scrapedVersions = extractVersionsFromHTML(html);
 
   if (scrapedVersions.length === 0) {
-    throw new Error('No versions found on ST website. Check if the page structure has changed.');
+    throw new Error(
+      'No STM32CubeCLT-Lnx versions found on ST website. ' +
+      'The page structure may have changed — check data-software-prmis-itemname attribute.'
+    );
   }
 
-  console.error(`✓ Successfully scraped ${scrapedVersions.length} versions from ST website`);
+  console.error(`✓ Found ${scrapedVersions.length} STM32CubeCLT-Lnx version(s)`);
 
-  // Convert to version objects
   const versionList = scrapedVersions.map(version => {
-    const [major, minor, patch] = version.split('.');
+    const [major, minor, patch] = version.split('.').map(Number);
     return {
       version,
       major,
@@ -89,21 +80,16 @@ async function scrapeVersions() {
 
   // Sort newest first
   versionList.sort((a, b) => {
-    const av = [a.major, a.minor, a.patch].map(Number);
-    const bv = [b.major, b.minor, b.patch].map(Number);
-    for (let i = 0; i < 3; i++) {
-      if (av[i] !== bv[i]) return bv[i] - av[i];
+    for (const k of ['major', 'minor', 'patch']) {
+      if (a[k] !== b[k]) return b[k] - a[k];
     }
     return 0;
   });
 
-  // Mark the newest as is_latest
-  if (versionList.length > 0) {
-    versionList[0].is_latest = true;
-  }
+  versionList[0].is_latest = true;
 
-  console.error(`Total versions detected: ${versionList.length}`);
   console.error(`Latest version: ${versionList[0].version}`);
+  console.error(`Total versions detected: ${versionList.length}`);
 
   console.log(JSON.stringify(versionList));
 }
