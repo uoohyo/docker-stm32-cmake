@@ -104,18 +104,25 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
     if (page.url().includes('my.st.com')) {
       console.error('  Waiting for username input...');
       await page.waitForSelector('input[name="username"]', { timeout: 30000 });
-      console.error('  Found username input, typing credentials...');
-      await page.type('input[name="username"]', USERNAME, { delay: 30 });
-      await page.type('input[name="password"]', PASSWORD, { delay: 30 });
+
+      // Dump form HTML to understand structure
+      const formHtml = await page.evaluate(() => {
+        const form = document.querySelector('form');
+        return form ? form.outerHTML.substring(0, 3000) : 'No form found';
+      });
+      console.error(`  Form HTML snippet:\n${formHtml}\n`);
+
+      console.error('  Clicking and typing credentials...');
+      await page.click('input[name="username"]');
+      await page.type('input[name="username"]', USERNAME, { delay: 50 });
+      await page.click('input[name="password"]');
+      await page.type('input[name="password"]', PASSWORD, { delay: 50 });
 
       const btn = await page.$('input[type="submit"], button[type="submit"]');
       console.error(`  Submit button found: ${!!btn}`);
 
-      console.error('  Clicking submit...');
-      await page.evaluate(() => {
-        const btn = document.querySelector('input[type="submit"], button[type="submit"]');
-        if (btn) btn.click();
-      });
+      console.error('  Submitting via Enter key...');
+      await page.keyboard.press('Enter');
 
       // Wait 3s then check page state before polling
       await new Promise(r => setTimeout(r, 3000));
