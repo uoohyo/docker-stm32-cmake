@@ -83,9 +83,13 @@ jobs:
 
       - name: Configure Docker credentials store for CI
         run: |
-          mkdir -p "$RUNNER_TEMP/.docker"
-          echo '{"credsStore":""}' > "$RUNNER_TEMP/.docker/config.json"
-          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
+          CONFIG="$HOME/.docker/config.json"
+          mkdir -p "$HOME/.docker"
+          if [ -f "$CONFIG" ]; then
+            python3 -c "import json; cfg=json.load(open('$CONFIG')); cfg.pop('credsStore',None); open('$CONFIG','w').write(json.dumps(cfg))"
+          else
+            echo '{}' > "$CONFIG"
+          fi
 
       - name: Log in to Docker Hub
         if: github.event.inputs.push_to_registry != 'false'
