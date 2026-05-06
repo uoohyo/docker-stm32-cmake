@@ -106,7 +106,15 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
         const btn = document.querySelector('input[type="submit"], button[type="submit"]');
         if (btn) btn.click();
       });
-      await page.waitForURL(url => !url.includes('my.st.com'), { timeout: 120000, waitUntil: 'load' });
+      // Poll until URL leaves my.st.com (works with all Puppeteer versions)
+      const deadline = Date.now() + 120000;
+      while (page.url().includes('my.st.com') && Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 1000));
+        console.error(`  Current URL: ${page.url()}`);
+      }
+      if (page.url().includes('my.st.com')) {
+        throw new Error('Timed out waiting for redirect from my.st.com after login');
+      }
 
       console.error(`  After login URL: ${page.url()}`);
       if (page.url().includes('my.st.com') || page.url().includes('cas/login')) {
