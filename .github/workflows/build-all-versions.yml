@@ -68,7 +68,7 @@ jobs:
 
   build-and-push:
     needs: detect-versions
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     strategy:
       max-parallel: 1  # Build one at a time to avoid ST rate limiting
       matrix:

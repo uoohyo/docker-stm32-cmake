@@ -86,7 +86,7 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
 
     // Navigate to CAS login (service= param ties the ticket to www.st.com)
     console.error('Navigating to CAS login...');
-    await page.goto(casLoginUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+    await page.goto(casLoginUrl, { waitUntil: 'networkidle2', timeout: 90000 });
     console.error(`  URL: ${page.url()}`);
 
     if (page.url().includes('my.st.com')) {
@@ -96,7 +96,7 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
       await page.type('input[name="password"]', PASSWORD, { delay: 30 });
 
       await Promise.all([
-        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }),
+        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 90000 }),
         page.evaluate(() => {
           const btn = document.querySelector('input[type="submit"], button[type="submit"]');
           if (btn) btn.click();
