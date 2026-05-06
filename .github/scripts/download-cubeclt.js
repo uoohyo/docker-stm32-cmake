@@ -85,8 +85,10 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
     // Navigate to CAS login (service= param ties the ticket to www.st.com)
+    // Use 'load' not 'networkidle2' — ST login page has persistent background
+    // requests that prevent networkidle2 from ever firing.
     console.error('Navigating to CAS login...');
-    await page.goto(casLoginUrl, { waitUntil: 'networkidle2', timeout: 90000 });
+    await page.goto(casLoginUrl, { waitUntil: 'load', timeout: 90000 });
     console.error(`  URL: ${page.url()}`);
 
     if (page.url().includes('my.st.com')) {
