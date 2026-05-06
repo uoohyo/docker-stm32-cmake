@@ -15,18 +15,6 @@
 const ST_CUBECLT_PAGE = 'https://www.st.com/en/development-tools/stm32cubeclt.html';
 const HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
 
-// Known STM32CubeCLT versions (manually maintained as fallback)
-// This list should be updated when new versions are released
-const KNOWN_VERSIONS = [
-  { version: '1.16.0', release_date: '2024-06', linux_supported: true },
-  { version: '1.15.1', release_date: '2024-03', linux_supported: true },
-  { version: '1.15.0', release_date: '2024-01', linux_supported: true },
-  { version: '1.14.1', release_date: '2023-12', linux_supported: true },
-  { version: '1.14.0', release_date: '2023-10', linux_supported: true },
-  { version: '1.13.2', release_date: '2023-06', linux_supported: true },
-  { version: '1.13.1', release_date: '2023-04', linux_supported: true },
-  { version: '1.13.0', release_date: '2023-02', linux_supported: true },
-];
 
 async function fetchText(url, timeoutMs = 30000) {
   const ctrl = new AbortController();
@@ -45,10 +33,16 @@ function extractVersionsFromHTML(html) {
 
   // Try different patterns that ST might use
   const patterns = [
+    // data-software-release attribute (most reliable)
+    /data-software-release="(\d+\.\d+\.\d+)"/gi,
+    // data-version attribute
+    /data-version="(\d+\.\d+\.\d+)"/gi,
+    // Version in div class versionoption
+    /<div class="versionoption">\s*(\d+\.\d+\.\d+)/gi,
     // Version in download links or text
     /(?:STM32CubeCLT|stm32cubeclt)[_-]?v?(\d+\.\d+\.\d+)/gi,
     // Version in URLs
-    /\/(\d+\.\d+\.\d+)\//g,
+    /version=(\d+\.\d+\.\d+)/gi,
     // Standalone version numbers
     /Version\s+(\d+\.\d+\.\d+)/gi,
   ];
@@ -71,55 +65,26 @@ function extractVersionsFromHTML(html) {
 async function scrapeVersions() {
   console.error(`Fetching ${ST_CUBECLT_PAGE}...`);
 
-  let scrapedVersions = [];
-  try {
-    const html = await fetchText(ST_CUBECLT_PAGE);
-    scrapedVersions = extractVersionsFromHTML(html);
-    console.error(`Found ${scrapedVersions.length} versions from ST website`);
-  } catch (error) {
-    console.error(`Warning: Failed to fetch ST page: ${error.message}`);
-    console.error('Using known versions list as fallback');
+  const html = await fetchText(ST_CUBECLT_PAGE);
+  const scrapedVersions = extractVersionsFromHTML(html);
+
+  if (scrapedVersions.length === 0) {
+    throw new Error('No versions found on ST website. Check if the page structure has changed.');
   }
 
-  // Merge scraped versions with known versions
-  const allVersions = new Map();
+  console.error(`✓ Successfully scraped ${scrapedVersions.length} versions from ST website`);
 
-  // Add known versions first
-  for (const v of KNOWN_VERSIONS) {
-    allVersions.set(v.version, v);
-  }
-
-  // Add scraped versions (if they're new)
-  for (const version of scrapedVersions) {
-    if (!allVersions.has(version)) {
-      // Parse version parts
-      const [major, minor, patch] = version.split('.').map(Number);
-
-      allVersions.set(version, {
-        version,
-        major: String(major),
-        minor: String(minor),
-        patch: String(patch),
-        linux_supported: true, // Assume Linux is supported for recent versions
-        // Note: We cannot determine download availability without authentication
-        // This will be validated separately when building
-        requires_auth: true,
-      });
-    }
-  }
-
-  // Convert to array and add version parts
-  const versionList = Array.from(allVersions.values()).map(v => {
-    if (!v.major) {
-      const [major, minor, patch] = v.version.split('.');
-      return {
-        ...v,
-        major,
-        minor,
-        patch,
-      };
-    }
-    return v;
+  // Convert to version objects
+  const versionList = scrapedVersions.map(version => {
+    const [major, minor, patch] = version.split('.');
+    return {
+      version,
+      major,
+      minor,
+      patch,
+      linux_supported: true,
+      requires_auth: true,
+    };
   });
 
   // Sort newest first
@@ -137,8 +102,8 @@ async function scrapeVersions() {
     versionList[0].is_latest = true;
   }
 
-  console.error(`\nTotal versions: ${versionList.length}`);
-  console.error(`Latest version: ${versionList[0]?.version || 'none'}`);
+  console.error(`Total versions detected: ${versionList.length}`);
+  console.error(`Latest version: ${versionList[0].version}`);
 
   console.log(JSON.stringify(versionList));
 }
