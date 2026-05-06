@@ -47,7 +47,7 @@ jobs:
           PAGE=1
 
           while true; do
-            RESPONSE=$(curl -s "https://hub.docker.com/v2/repositories/uoohyo/stm32cubeclt/tags?page=${PAGE}&page_size=100")
+            RESPONSE=$(curl -s "https://hub.docker.com/v2/repositories/uoohyo/stm32-cmake/tags?page=${PAGE}&page_size=100")
             TAGS=$(echo "$RESPONSE" | jq -r '.results[].name' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' || echo "")
 
             if [ -z "$TAGS" ]; then
@@ -91,7 +91,7 @@ jobs:
 
               if echo "$DOCKER_TAGS" | jq -e --arg v "$version" '. | index($v) != null' > /dev/null 2>&1; then
                 STATUS="✅ Available"
-                DOCKER_PULL="\`docker pull uoohyo/stm32cubeclt:${version}\`"
+                DOCKER_PULL="\`docker pull uoohyo/stm32-cmake:${version}\`"
               elif [ "$linux_supported" = "true" ]; then
                 STATUS="🔨 Not Built Yet"
                 DOCKER_PULL="-"
@@ -150,13 +150,13 @@ This page lists all available STM32CubeCLT versions and their Docker image avail
 Pull a specific version:
 
 \`\`\`bash
-docker pull uoohyo/stm32cubeclt:VERSION
+docker pull uoohyo/stm32-cmake:VERSION
 \`\`\`
 
 Or use the latest:
 
 \`\`\`bash
-docker pull uoohyo/stm32cubeclt:latest
+docker pull uoohyo/stm32-cmake:latest
 \`\`\`
 
 ---
@@ -267,7 +267,7 @@ EOF
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issue.number,
-                body: `✅ **Build completed successfully!**\n\nAll versions have been built and pushed to Docker Hub.\n\n- 📦 [Docker Hub Repository](https://hub.docker.com/r/uoohyo/stm32cubeclt/tags)\n- 📋 [Version Documentation](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/docs/versions.md)\n- 📝 README has been updated with the latest versions\n\nThis issue is now closed automatically.`
+                body: `✅ **Build completed successfully!**\n\nAll versions have been built and pushed to Docker Hub.\n\n- 📦 [Docker Hub Repository](https://hub.docker.com/r/uoohyo/stm32-cmake/tags)\n- 📋 [Version Documentation](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/docs/versions.md)\n- 📝 README has been updated with the latest versions\n\nThis issue is now closed automatically.`
               });
 
               await github.rest.issues.addLabels({

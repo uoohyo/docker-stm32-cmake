@@ -30,13 +30,13 @@ This page lists all available STM32CubeCLT versions and their Docker image avail
 Pull a specific version:
 
 ```bash
-docker pull uoohyo/stm32cubeclt:VERSION
+docker pull uoohyo/stm32-cmake:VERSION
 ```
 
 Or use the latest:
 
 ```bash
-docker pull uoohyo/stm32cubeclt:latest
+docker pull uoohyo/stm32-cmake:latest
 ```
 
 ---

@@ -106,7 +106,7 @@ jobs:
             ST_USERNAME=${{ secrets.ST_USERNAME }}
             ST_PASSWORD=${{ secrets.ST_PASSWORD }}
           tags: |
-            uoohyo/stm32cubeclt:${{ matrix.version_info.version }}
+            uoohyo/stm32-cmake:${{ matrix.version_info.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
@@ -117,7 +117,7 @@ jobs:
       - name: Test Docker image
         run: |
           echo "Testing STM32CubeCLT ${{ matrix.version_info.version }}..."
-          docker run --rm uoohyo/stm32cubeclt:${{ matrix.version_info.version }} bash -c "
+          docker run --rm uoohyo/stm32-cmake:${{ matrix.version_info.version }} bash -c "
             if command -v arm-none-eabi-gcc &> /dev/null; then
               echo '✓ ARM GCC found';
               arm-none-eabi-gcc --version | head -1;
@@ -130,8 +130,8 @@ jobs:
       - name: Push to Docker Hub
         if: github.event.inputs.push_to_registry != 'false' && success()
         run: |
-          docker push uoohyo/stm32cubeclt:${{ matrix.version_info.version }}
-          echo "✓ Pushed uoohyo/stm32cubeclt:${{ matrix.version_info.version }}"
+          docker push uoohyo/stm32-cmake:${{ matrix.version_info.version }}
+          echo "✓ Pushed uoohyo/stm32-cmake:${{ matrix.version_info.version }}"
 
   tag-latest:
     needs: [detect-versions, build-and-push]
@@ -149,7 +149,7 @@ jobs:
           BUILT_VERSION="${{ needs.detect-versions.outputs.latest_version }}"
 
           # Fetch all existing tags from Docker Hub to find actual latest
-          EXISTING_TAGS=$(curl -s "https://hub.docker.com/v2/repositories/uoohyo/stm32cubeclt/tags?page_size=100" \
+          EXISTING_TAGS=$(curl -s "https://hub.docker.com/v2/repositories/uoohyo/stm32-cmake/tags?page_size=100" \
             | jq -r '.results[].name' \
             | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' || echo "")
 
@@ -162,9 +162,9 @@ jobs:
           echo "Built version: ${BUILT_VERSION}"
           echo "Actual latest across all tags: ${ACTUAL_LATEST}"
 
-          docker pull uoohyo/stm32cubeclt:${ACTUAL_LATEST}
-          docker tag uoohyo/stm32cubeclt:${ACTUAL_LATEST} uoohyo/stm32cubeclt:latest
-          docker push uoohyo/stm32cubeclt:latest
+          docker pull uoohyo/stm32-cmake:${ACTUAL_LATEST}
+          docker tag uoohyo/stm32-cmake:${ACTUAL_LATEST} uoohyo/stm32-cmake:latest
+          docker push uoohyo/stm32-cmake:latest
 
   handle-failure:
     needs: [detect-versions, build-and-push]
