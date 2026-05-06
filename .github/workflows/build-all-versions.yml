@@ -81,22 +81,20 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Configure Docker credentials store for CI
-        run: |
-          CONFIG="$HOME/.docker/config.json"
-          mkdir -p "$HOME/.docker"
-          if [ -f "$CONFIG" ]; then
-            python3 -c "import json; cfg=json.load(open('$CONFIG')); cfg.pop('credsStore',None); open('$CONFIG','w').write(json.dumps(cfg))"
-          else
-            echo '{}' > "$CONFIG"
-          fi
-
       - name: Log in to Docker Hub
         if: github.event.inputs.push_to_registry != 'false'
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          # Bypass docker login entirely — macOS Keychain is inaccessible from
+          # LaunchAgent context. Write base64 auth directly into a temp config.
+          DOCKER_DIR="$RUNNER_TEMP/.docker-ci"
+          mkdir -p "$DOCKER_DIR"
+          AUTH=$(printf '%s:%s' "$DOCKERHUB_USERNAME" "$DOCKERHUB_TOKEN" | base64 | tr -d '\n')
+          printf '{"auths":{"https://index.docker.io/v1/":{"auth":"%s"}}}\n' "$AUTH" > "$DOCKER_DIR/config.json"
+          echo "DOCKER_CONFIG=$DOCKER_DIR" >> "$GITHUB_ENV"
+          echo "✓ Docker Hub credentials written to $DOCKER_DIR/config.json"
 
       - name: Setup Node.js for downloader
         uses: actions/setup-node@v4
