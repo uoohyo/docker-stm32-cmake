@@ -2,8 +2,14 @@
 /**
  * Scrape STM32CubeCLT versions from ST website.
  *
- * Targets gscontent divs with data-software-prmis-itemname="STM32CubeCLT-Lnx"
- * to extract data-software-release version numbers from the same opening tag.
+ * Strategy (two requests):
+ *   1. Fetch the main product page to find the get-software-table-body endpoint URL.
+ *   2. Fetch that endpoint and extract the latest STM32CubeCLT-Lnx version from
+ *      the <td data-product-rpn="STM32CubeCLT-Lnx"> table row.
+ *
+ * Background: version data is server-rendered into get-software-table-body.nocache.html
+ * (the latest version only). The Select-Version dropdown is populated lazily by JavaScript
+ * at click time, so older versions are not available without a real browser.
  */
 
 const ST_CUBECLT_PAGE = 'https://www.st.com/en/development-tools/stm32cubeclt.html';
@@ -13,83 +19,78 @@ const HEADERS = {
   'Accept-Language': 'en-US,en;q=0.5',
 };
 
-
-async function fetchText(url, timeoutMs = 30000) {
+async function fetchText(url, referer, timeoutMs = 30000) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { headers: HEADERS, signal: ctrl.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const headers = referer ? { ...HEADERS, 'Referer': referer } : HEADERS;
+    const res = await fetch(url, { headers, signal: ctrl.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
     return await res.text();
   } finally {
     clearTimeout(timer);
   }
 }
 
-function extractVersionsFromHTML(html) {
-  const seen = new Set();
-  const versions = [];
+function extractTableBodyUrl(mainHtml) {
+  // In the HTML, jQuery.get paths use \/path\/to\/file (backslash-escaped slashes).
+  // Do NOT anchor to "/" at the start of the capture group — the raw text starts with "\/".
+  const match = mainHtml.match(/jQuery\.get\("([^"]*get-software-table-body[^"]*)"/);
+  if (match) return 'https://www.st.com' + match[1].replace(/\\\//g, '/');
 
-  // Match opening div tags that contain data-software-prmis-itemname="STM32CubeCLT-Lnx".
-  // Both the product name and version attributes live on the same opening tag, so we
-  // only read as far as the first ">" — no cross-tag leakage is possible.
-  const tagPattern = /<div[^>]*data-software-prmis-itemname="STM32CubeCLT-Lnx"[^>]*>/gi;
-  const releaseAttr = /data-software-release="(\d+\.\d+\.\d+)"/i;
+  throw new Error('Could not find get-software-table-body URL in the main page HTML.');
+}
 
-  let tagMatch;
-  while ((tagMatch = tagPattern.exec(html)) !== null) {
-    const releaseMatch = releaseAttr.exec(tagMatch[0]);
-    if (releaseMatch) {
-      const version = releaseMatch[1];
-      if (!seen.has(version)) {
-        seen.add(version);
-        versions.push(version);
-      }
-    }
+function extractLatestLnxVersion(tableBodyHtml) {
+  // Find the <tr> that contains a <td data-product-rpn="STM32CubeCLT-Lnx"> and
+  // extract the plain-text version number from a nearby <td>.
+  const trMatch = tableBodyHtml.match(
+    /<tr>\s*<td[^>]*data-product-rpn=["']STM32CubeCLT-Lnx["'][^>]*>[\s\S]*?<\/tr>/
+  );
+  if (trMatch) {
+    // Third cell in that row is the version
+    const tdVersionMatch = trMatch[0].match(/<td>\s*(\d+\.\d+\.\d+)\s*<\/td>/);
+    if (tdVersionMatch) return tdVersionMatch[1];
   }
 
-  return versions;
+  // Fallback: data-version attribute on any button/link associated with CP543472
+  const dvMatch = tableBodyHtml.match(
+    /data-id=["']CP543472["'][^>]*data-version=["'](\d+\.\d+\.\d+)["']|data-version=["'](\d+\.\d+\.\d+)["'][^>]*data-id=["']CP543472["']/
+  );
+  if (dvMatch) return dvMatch[1] || dvMatch[2];
+
+  return null;
 }
 
 async function scrapeVersions() {
-  console.error(`Fetching ${ST_CUBECLT_PAGE}...`);
+  console.error(`Fetching main page: ${ST_CUBECLT_PAGE}`);
+  const mainHtml = await fetchText(ST_CUBECLT_PAGE);
 
-  const html = await fetchText(ST_CUBECLT_PAGE);
-  const scrapedVersions = extractVersionsFromHTML(html);
+  const tableBodyUrl = extractTableBodyUrl(mainHtml);
+  console.error(`Fetching software table: ${tableBodyUrl}`);
 
-  if (scrapedVersions.length === 0) {
+  const tableBodyHtml = await fetchText(tableBodyUrl, ST_CUBECLT_PAGE);
+
+  const latestVersion = extractLatestLnxVersion(tableBodyHtml);
+  if (!latestVersion) {
     throw new Error(
-      'No STM32CubeCLT-Lnx versions found on ST website. ' +
-      'The page structure may have changed — check data-software-prmis-itemname attribute.'
+      'Could not extract STM32CubeCLT-Lnx version from the get-software table. ' +
+      'Check the data-product-rpn and data-version attributes.'
     );
   }
 
-  console.error(`✓ Found ${scrapedVersions.length} STM32CubeCLT-Lnx version(s)`);
+  console.error(`✓ Latest STM32CubeCLT-Lnx version: ${latestVersion}`);
 
-  const versionList = scrapedVersions.map(version => {
-    const [major, minor, patch] = version.split('.').map(Number);
-    return {
-      version,
-      major,
-      minor,
-      patch,
-      linux_supported: true,
-      requires_auth: true,
-    };
-  });
-
-  // Sort newest first
-  versionList.sort((a, b) => {
-    for (const k of ['major', 'minor', 'patch']) {
-      if (a[k] !== b[k]) return b[k] - a[k];
-    }
-    return 0;
-  });
-
-  versionList[0].is_latest = true;
-
-  console.error(`Latest version: ${versionList[0].version}`);
-  console.error(`Total versions detected: ${versionList.length}`);
+  const [major, minor, patch] = latestVersion.split('.').map(Number);
+  const versionList = [{
+    version: latestVersion,
+    major,
+    minor,
+    patch,
+    linux_supported: true,
+    requires_auth: true,
+    is_latest: true,
+  }];
 
   console.log(JSON.stringify(versionList));
 }
