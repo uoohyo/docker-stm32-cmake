@@ -1,9 +1,9 @@
 # docker-stm32-cmake
 
 [![Build](https://img.shields.io/github/actions/workflow/status/uoohyo/docker-stm32-cmake/build-all-versions.yml?branch=main&style=flat-square&logo=github-actions&label=build)](https://github.com/uoohyo/docker-stm32-cmake/actions/workflows/build-all-versions.yml)
-[![Docker Pulls](https://img.shields.io/docker/pulls/uoohyo/stm32cubeclt?style=flat-square&logo=docker)](https://hub.docker.com/r/uoohyo/stm32cubeclt)
-[![Docker Image Size](https://img.shields.io/docker/image-size/uoohyo/stm32cubeclt/latest?style=flat-square&logo=docker)](https://hub.docker.com/r/uoohyo/stm32cubeclt)
-[![Docker Image Version](https://img.shields.io/docker/v/uoohyo/stm32cubeclt?style=flat-square&logo=docker&label=version)](https://hub.docker.com/r/uoohyo/stm32cubeclt)
+[![Docker Pulls](https://img.shields.io/docker/pulls/uoohyo/stm32-cmake?style=flat-square&logo=docker)](https://hub.docker.com/r/uoohyo/stm32-cmake)
+[![Docker Image Size](https://img.shields.io/docker/image-size/uoohyo/stm32-cmake/latest?style=flat-square&logo=docker)](https://hub.docker.com/r/uoohyo/stm32-cmake)
+[![Docker Image Version](https://img.shields.io/docker/v/uoohyo/stm32-cmake?style=flat-square&logo=docker&label=version)](https://hub.docker.com/r/uoohyo/stm32-cmake)
 [![GitHub Stars](https://img.shields.io/github/stars/uoohyo/docker-stm32-cmake?style=flat-square&logo=github)](https://github.com/uoohyo/docker-stm32-cmake/stargazers)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
@@ -34,7 +34,7 @@ Once the container is running, use CLI commands to build and program your STM32 
 
 **Build with CMake:**
 
-    docker run -it -v $(pwd):/workspace uoohyo/stm32cubeclt:latest bash -c "
+    docker run -it -v $(pwd):/workspace uoohyo/stm32-cmake:latest bash -c "
       cd /workspace/your-project
       mkdir -p build && cd build
       cmake .. -G Ninja
@@ -43,14 +43,14 @@ Once the container is running, use CLI commands to build and program your STM32 
 
 **Compile with Make:**
 
-    docker run -it -v $(pwd):/workspace uoohyo/stm32cubeclt:latest bash -c "
+    docker run -it -v $(pwd):/workspace uoohyo/stm32-cmake:latest bash -c "
       cd /workspace/your-project
       make
     "
 
 **Generate code with STM32CubeMX:**
 
-    docker run -it -v $(pwd):/workspace uoohyo/stm32cubeclt:latest bash -c "
+    docker run -it -v $(pwd):/workspace uoohyo/stm32-cmake:latest bash -c "
       cd /workspace
       STM32CubeMX -q your-project.ioc
     "
@@ -58,7 +58,7 @@ Once the container is running, use CLI commands to build and program your STM32 
 **Program STM32 device:**
 
     docker run -it --privileged -v /dev/bus/usb:/dev/bus/usb \
-      -v $(pwd):/workspace uoohyo/stm32cubeclt:latest bash -c "
+      -v $(pwd):/workspace uoohyo/stm32-cmake:latest bash -c "
       STM32_Programmer_CLI -c port=SWD -w firmware.hex -v -rst
     "
 
@@ -66,15 +66,15 @@ Once the container is running, use CLI commands to build and program your STM32 
 
 Pull a version-specific image from Docker Hub:
 
-    docker pull uoohyo/stm32cubeclt:1.16.0
+    docker pull uoohyo/stm32-cmake:1.16.0
 
 Or use the latest:
 
-    docker pull uoohyo/stm32cubeclt:latest
+    docker pull uoohyo/stm32-cmake:latest
 
 Run the container:
 
-    docker run -it -v $(pwd):/workspace uoohyo/stm32cubeclt:1.16.0
+    docker run -it -v $(pwd):/workspace uoohyo/stm32-cmake:1.16.0
 
 See [docs/versions.md](docs/versions.md) for all available versions.
 
@@ -86,7 +86,7 @@ To build this image yourself, you need an ST account (free registration at [my.s
       --build-arg ST_USERNAME="your-email@example.com" \
       --build-arg ST_PASSWORD="your-password" \
       --build-arg CUBECLT_VERSION="1.16.0" \
-      -t stm32cubeclt:local .
+      -t stm32-cmake:local .
 
 ## Included Tools
 
@@ -109,7 +109,7 @@ To build this image yourself, you need an ST account (free registration at [my.s
       build:
         runs-on: ubuntu-latest
         container:
-          image: uoohyo/stm32cubeclt:latest
+          image: uoohyo/stm32-cmake:latest
         steps:
           - uses: actions/checkout@v4
           - name: Build
@@ -120,7 +120,7 @@ To build this image yourself, you need an ST account (free registration at [my.s
 **GitLab CI:**
 
     build:
-      image: uoohyo/stm32cubeclt:latest
+      image: uoohyo/stm32-cmake:latest
       script:
         - mkdir -p build && cd build
         - cmake .. -G Ninja && ninja
