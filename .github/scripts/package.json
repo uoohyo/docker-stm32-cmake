@@ -1,7 +1,5 @@
 {
   "name": "stm32-version-scraper",
   "private": true,
-  "dependencies": {
-    "puppeteer": "^24.0.0"
-  }
+  "dependencies": {}
 }
