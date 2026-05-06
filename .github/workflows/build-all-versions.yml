@@ -88,12 +88,27 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Validate ST credentials
+      - name: Setup Node.js for downloader
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install scraper/downloader dependencies
+        run: npm ci --prefix .github/scripts
+
+      - name: Download STM32CubeCLT installer
+        env:
+          CUBECLT_VERSION: ${{ matrix.version_info.version }}
+          ST_USERNAME: ${{ secrets.ST_USERNAME }}
+          ST_PASSWORD: ${{ secrets.ST_PASSWORD }}
+          OUTPUT_DIR: cubeclt_download
         run: |
-          if [ -z "${{ secrets.ST_USERNAME }}" ] || [ -z "${{ secrets.ST_PASSWORD }}" ]; then
+          if [ -z "$ST_USERNAME" ] || [ -z "$ST_PASSWORD" ]; then
             echo "::error::ST_USERNAME and ST_PASSWORD secrets must be set"
             exit 1
           fi
+          mkdir -p cubeclt_download
+          node .github/scripts/download-cubeclt.js
 
       - name: Build Docker image
         uses: docker/build-push-action@v6
@@ -103,16 +118,11 @@ jobs:
           load: true
           build-args: |
             CUBECLT_VERSION=${{ matrix.version_info.version }}
-            ST_USERNAME=${{ secrets.ST_USERNAME }}
-            ST_PASSWORD=${{ secrets.ST_PASSWORD }}
           tags: |
             uoohyo/stm32-cmake:${{ matrix.version_info.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
-          secrets: |
-            ST_USERNAME=${{ secrets.ST_USERNAME }}
-            ST_PASSWORD=${{ secrets.ST_PASSWORD }}
 
       - name: Test Docker image
         run: |

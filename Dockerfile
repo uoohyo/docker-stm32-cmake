@@ -1,58 +1,29 @@
 # ============================================
-# Stage 1: Download STM32CubeCLT
+# Stage 1: Extract pre-downloaded STM32CubeCLT
 # ============================================
-FROM ubuntu:22.04 AS downloader
+# The installer zip is downloaded in GitHub Actions (download-cubeclt.js)
+# before this build runs — no credentials needed inside Docker.
+FROM ubuntu:22.04 AS extractor
 
-# STM32CubeCLT Version (can be overridden at build time)
 ARG CUBECLT_VERSION=1.16.0
 
-# ST Account Credentials (passed from GitHub Actions secrets)
-ARG ST_USERNAME
-ARG ST_PASSWORD
-
-# Validate credentials
-RUN if [ -z "$ST_USERNAME" ] || [ -z "$ST_PASSWORD" ]; then \
-        echo "ERROR: ST_USERNAME and ST_PASSWORD build arguments are required"; \
-        echo "Build with: docker build --build-arg ST_USERNAME=<email> --build-arg ST_PASSWORD=<password> ."; \
-        exit 1; \
-    fi
-
-# Install download tools
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    curl \
-    ca-certificates \
-    unzip && \
+    apt-get install -y --no-install-recommends unzip ca-certificates && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copy download script
-COPY .github/scripts/download-cubeclt.sh /tmp/download-cubeclt.sh
-RUN chmod +x /tmp/download-cubeclt.sh
+# The workflow places the downloaded .sh.zip in cubeclt_download/
+COPY cubeclt_download/ /cubeclt_download/
 
-# Download STM32CubeCLT
-RUN echo ">>> Downloading STM32CubeCLT ${CUBECLT_VERSION}..." && \
-    mkdir -p /cubeclt_download /cubeclt_installer && \
-    cd /cubeclt_download && \
-    ST_USERNAME="${ST_USERNAME}" \
-    ST_PASSWORD="${ST_PASSWORD}" \
-    CUBECLT_VERSION="${CUBECLT_VERSION}" \
-    /tmp/download-cubeclt.sh && \
-    echo ">>> Download complete" && \
-    ls -lh /cubeclt_download/
-
-# Extract STM32CubeCLT
-# Note: Adjust extraction based on actual archive format
-RUN echo ">>> Extracting STM32CubeCLT..." && \
-    cd /cubeclt_download && \
-    ARCHIVE=$(ls -1 *.zip 2>/dev/null | head -1) && \
-    if [ -n "$ARCHIVE" ]; then \
-        unzip -q "$ARCHIVE" -d /cubeclt_installer && \
-        echo ">>> Extraction complete" && \
-        rm -f "$ARCHIVE"; \
-    else \
-        echo "ERROR: No archive found in /cubeclt_download"; \
+RUN echo ">>> Extracting STM32CubeCLT ${CUBECLT_VERSION}..." && \
+    mkdir -p /cubeclt_installer && \
+    ARCHIVE=$(ls -1 /cubeclt_download/*.zip 2>/dev/null | head -1) && \
+    if [ -z "$ARCHIVE" ]; then \
+        echo "ERROR: No archive found in /cubeclt_download (download step may have failed)"; \
         exit 1; \
-    fi
+    fi && \
+    unzip -q "$ARCHIVE" -d /cubeclt_installer && \
+    echo ">>> Extraction complete" && \
+    ls -lh /cubeclt_installer
 
 # ============================================
 # Stage 2: Runtime Image
@@ -97,7 +68,7 @@ RUN echo ">>> Installing system dependencies..." && \
     echo ">>> Done."
 
 # Copy extracted STM32CubeCLT from downloader stage
-COPY --from=downloader /cubeclt_installer /opt/cubeclt-installer
+COPY --from=extractor /cubeclt_installer /opt/cubeclt-installer
 
 # Working Directory
 WORKDIR /workspace
