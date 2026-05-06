@@ -53,6 +53,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Install scraper dependencies
+        run: npm ci --prefix .github/scripts
+
       - name: Get all versions from ST
         id: st-versions
         run: |
@@ -72,7 +75,7 @@ jobs:
           echo "Fetching existing tags from Docker Hub..."
 
           # Get all tags from Docker Hub (handle API errors gracefully)
-          RESPONSE=$(curl -s "https://hub.docker.com/v2/repositories/uoohyo/stm32cubeclt/tags?page_size=100")
+          RESPONSE=$(curl -s "https://hub.docker.com/v2/repositories/uoohyo/stm32-cmake/tags?page_size=100")
 
           # Check if repository exists (API returns error object if not found)
           if echo "$RESPONSE" | jq -e '.message' > /dev/null 2>&1; then
