@@ -74,52 +74,56 @@ async function scrapeVersions() {
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     );
 
-    console.error(`Navigating to ${ST_CUBECLT_PAGE}...`);
-    await page.goto(ST_CUBECLT_PAGE, { waitUntil: 'networkidle2', timeout: 60000 });
+    try {
+      console.error(`Navigating to ${ST_CUBECLT_PAGE}...`);
+      await page.goto(ST_CUBECLT_PAGE, { waitUntil: 'networkidle2', timeout: 60000 });
 
-    // Wait for the SDI get-software table fragment to inject the product row
-    console.error('Waiting for STM32CubeCLT-Lnx product row...');
-    await page.waitForSelector('[data-product-rpn="STM32CubeCLT-Lnx"]', { timeout: 30000 });
-    console.error('Product row found.');
+      // Wait for the SDI get-software table fragment to inject the product row
+      console.error('Waiting for STM32CubeCLT-Lnx product row...');
+      await page.waitForSelector('[data-product-rpn="STM32CubeCLT-Lnx"]', { timeout: 30000 });
+      console.error('Product row found.');
 
-    // Click the "Select version" button using a row-relative selector (no hardcoded IDs).
-    // This triggers initSoftwareButtons which runs the inline scripts that
-    // set data-software-release on each gscontent element in the dropdown.
-    const clicked = await page.evaluate(() => {
-      const td = document.querySelector('[data-product-rpn="STM32CubeCLT-Lnx"]');
-      const row = td && td.closest('tr');
-      const btn = row && row.querySelector('.msw-selectversionbutton');
-      if (btn) { btn.click(); return true; }
-      return false;
-    });
-    console.error(`Select-version button clicked: ${clicked}`);
+      // Click the "Select version" button using a row-relative selector (no hardcoded IDs).
+      // This triggers initSoftwareButtons which runs the inline scripts that
+      // set data-software-release on each gscontent element in the dropdown.
+      const clicked = await page.evaluate(() => {
+        const td = document.querySelector('[data-product-rpn="STM32CubeCLT-Lnx"]');
+        const row = td && td.closest('tr');
+        const btn = row && row.querySelector('.msw-selectversionbutton');
+        if (btn) { btn.click(); return true; }
+        return false;
+      });
+      console.error(`Select-version button clicked: ${clicked}`);
 
-    if (clicked) {
-      // Wait up to 30 s for inline scripts to populate data-software-release.
-      // Use a row-relative selector so no hardcoded product IDs are needed.
-      try {
-        await page.waitForFunction(
-          () => {
+      if (clicked) {
+        // Wait up to 30 s for inline scripts to populate data-software-release.
+        // Use a row-relative selector so no hardcoded product IDs are needed.
+        try {
+          await page.waitForFunction(
+            () => {
+              const td = document.querySelector('[data-product-rpn="STM32CubeCLT-Lnx"]');
+              const row = td && td.closest('tr');
+              const dropdown = row && row.querySelector('.msw-selectversionbutton-content');
+              return dropdown && dropdown.querySelectorAll('.gscontent[data-software-release]').length > 0;
+            },
+            { timeout: 30000 }
+          );
+
+          versions = await page.evaluate(() => {
             const td = document.querySelector('[data-product-rpn="STM32CubeCLT-Lnx"]');
-            const row = td && td.closest('tr');
-            const dropdown = row && row.querySelector('.msw-selectversionbutton-content');
-            return dropdown && dropdown.querySelectorAll('.gscontent[data-software-release]').length > 0;
-          },
-          { timeout: 30000 }
-        );
-
-        versions = await page.evaluate(() => {
-          const td = document.querySelector('[data-product-rpn="STM32CubeCLT-Lnx"]');
-          const row = td.closest('tr');
-          const dropdown = row.querySelector('.msw-selectversionbutton-content');
-          return [...dropdown.querySelectorAll('.gscontent[data-software-release]')]
-            .map(el => el.getAttribute('data-software-release'))
-            .filter(v => /^\d+\.\d+\.\d+$/.test(v));
-        });
-        console.error(`✓ Dropdown populated: ${versions.length} versions`);
-      } catch (e) {
-        console.error(`Dropdown did not populate (${e.message}). Falling back to HTTP.`);
+            const row = td.closest('tr');
+            const dropdown = row.querySelector('.msw-selectversionbutton-content');
+            return [...dropdown.querySelectorAll('.gscontent[data-software-release]')]
+              .map(el => el.getAttribute('data-software-release'))
+              .filter(v => /^\d+\.\d+\.\d+$/.test(v));
+          });
+          console.error(`✓ Dropdown populated: ${versions.length} versions`);
+        } catch (e) {
+          console.error(`Dropdown did not populate (${e.message}). Falling back to HTTP.`);
+        }
       }
+    } catch (e) {
+      console.error(`Puppeteer navigation/selector failed (${e.message}). Falling back to HTTP.`);
     }
   } finally {
     await browser.close();
