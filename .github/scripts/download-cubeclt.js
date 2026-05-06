@@ -92,11 +92,16 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
     console.error(`  URL: ${page.url()}`);
 
     if (page.url().includes('my.st.com')) {
-      // Fill in credentials
-      await page.waitForSelector('input[name="username"]', { timeout: 15000 });
+      console.error('  Waiting for username input...');
+      await page.waitForSelector('input[name="username"]', { timeout: 30000 });
+      console.error('  Found username input, typing credentials...');
       await page.type('input[name="username"]', USERNAME, { delay: 30 });
       await page.type('input[name="password"]', PASSWORD, { delay: 30 });
 
+      const btn = await page.$('input[type="submit"], button[type="submit"]');
+      console.error(`  Submit button found: ${!!btn}`);
+
+      console.error('  Clicking submit and waiting for navigation...');
       await Promise.all([
         page.waitForNavigation({ waitUntil: 'load', timeout: 90000 }),
         page.evaluate(() => {
