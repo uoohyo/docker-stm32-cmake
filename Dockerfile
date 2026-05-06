@@ -23,9 +23,9 @@ RUN chmod +x /tmp/download-cubeclt.sh
 RUN echo ">>> Downloading STM32CubeCLT ${CUBECLT_VERSION}..." && \
     mkdir -p /cubeclt_download /cubeclt_installer && \
     (cd /cubeclt_download && \
-    ST_USERNAME="${ST_USERNAME}" \
-    ST_PASSWORD="${ST_PASSWORD}" \
-    CUBECLT_VERSION="${CUBECLT_VERSION}" \
+    export ST_USERNAME="${ST_USERNAME}" && \
+    export ST_PASSWORD="${ST_PASSWORD}" && \
+    export CUBECLT_VERSION="${CUBECLT_VERSION}" && \
     /tmp/download-cubeclt.sh) && \
     echo ">>> Download complete" && \
     ls -lh /cubeclt_download/
