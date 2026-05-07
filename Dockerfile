@@ -11,6 +11,17 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # STM32CubeCLT Version (can be overridden at build time)
 ARG CUBECLT_VERSION=1.21.0
 
+# ST Account Credentials (passed from GitHub Actions secrets)
+ARG ST_USERNAME
+ARG ST_PASSWORD
+
+# Validate credentials
+RUN if [ -z "$ST_USERNAME" ] || [ -z "$ST_PASSWORD" ]; then \
+        echo "ERROR: ST_USERNAME and ST_PASSWORD build arguments are required"; \
+        echo "Build with: docker build --build-arg ST_USERNAME=<email> --build-arg ST_PASSWORD=<password> ."; \
+        exit 1; \
+    fi
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends unzip ca-certificates && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
