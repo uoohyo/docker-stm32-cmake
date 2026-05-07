@@ -93,13 +93,14 @@ jobs:
               ST_LINK="https://www.st.com/en/development-tools/stm32cubeclt.html"
 
               if echo "$DOCKER_TAGS" | jq -e --arg v "$version" '. | index($v) != null' > /dev/null 2>&1; then
-                STATUS="✅ Available"
-                DOCKER_PULL="\`docker pull uoohyo/stm32-cmake:${version}\`"
+                STATUS="![available](https://img.shields.io/badge/available-2496ED?style=flat-square&logo=docker&logoColor=white)"
+                DOCKER_LINK="https://hub.docker.com/r/uoohyo/stm32-cmake/tags?name=${version}"
+                DOCKER_PULL="[\`docker pull uoohyo/stm32-cmake:${version}\`](${DOCKER_LINK})"
               elif [ "$linux_supported" = "true" ]; then
-                STATUS="🔨 Not Built Yet"
+                STATUS="![not built](https://img.shields.io/badge/not%20built-orange?style=flat-square)"
                 DOCKER_PULL="-"
               else
-                STATUS="⚠️ Not Supported"
+                STATUS="![not supported](https://img.shields.io/badge/not%20supported-gray?style=flat-square)"
                 DOCKER_PULL="-"
               fi
 
@@ -120,8 +121,8 @@ jobs:
           ' | while read -r version; do
             # Static badge showing version is available on Docker Hub
             DOCKER_LINK="https://hub.docker.com/r/uoohyo/stm32-cmake/tags?name=${version}"
-            BADGE="https://img.shields.io/badge/docker-available-2496ED?style=flat-square&logo=docker&logoColor=white"
-            echo "<tr><td>v${version}</td><td><a href=\"${DOCKER_LINK}\"><img src=\"${BADGE}\" alt=\"available on docker hub\" /></a></td></tr>" >> /tmp/table-readme.md
+            BADGE="https://img.shields.io/badge/available-2496ED?style=flat-square&logo=docker&logoColor=white"
+            echo "<tr><td>v${version}</td><td><a href=\"${DOCKER_LINK}\"><img src=\"${BADGE}\" alt=\"available\" /></a></td></tr>" >> /tmp/table-readme.md
           done
 
           echo "Full table: $(wc -l < /tmp/table-full.md) rows"
