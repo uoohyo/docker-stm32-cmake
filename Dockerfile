@@ -11,49 +11,22 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # STM32CubeCLT Version (can be overridden at build time)
 ARG CUBECLT_VERSION=1.21.0
 
-# ST Account Credentials (passed from GitHub Actions secrets)
-ARG ST_USERNAME
-ARG ST_PASSWORD
-
-# Validate credentials
-RUN if [ -z "$ST_USERNAME" ] || [ -z "$ST_PASSWORD" ]; then \
-        echo "ERROR: ST_USERNAME and ST_PASSWORD build arguments are required"; \
-        echo "Build with: docker build --build-arg ST_USERNAME=<email> --build-arg ST_PASSWORD=<password> ."; \
-        exit 1; \
-    fi
-
+# Install unzip utility
 RUN apt-get update && \
     apt-get install -y --no-install-recommends unzip ca-certificates && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copy download script
-COPY .github/scripts/download-cubeclt.sh /tmp/download-cubeclt.sh
-RUN chmod +x /tmp/download-cubeclt.sh
-
-# Download STM32CubeCLT
-RUN echo ">>> Downloading STM32CubeCLT ${CUBECLT_VERSION}..." && \
-    mkdir -p /cubeclt_download /cubeclt_installer && \
-    (cd /cubeclt_download && \
-    export ST_USERNAME="${ST_USERNAME}" && \
-    export ST_PASSWORD="${ST_PASSWORD}" && \
-    export CUBECLT_VERSION="${CUBECLT_VERSION}" && \
-    /tmp/download-cubeclt.sh) && \
-    echo ">>> Download complete" && \
-    ls -lh /cubeclt_download/
+# Copy pre-downloaded installer from GitHub Actions
+# The installer is downloaded by .github/scripts/download-cubeclt.js
+COPY cubeclt_download/*.zip /tmp/installer.zip
 
 # Extract STM32CubeCLT
-# Note: Adjust extraction based on actual archive format
-RUN echo ">>> Extracting STM32CubeCLT..." && \
-    (cd /cubeclt_download && \
-    ARCHIVE=$(find . -maxdepth 1 -name "*.zip" 2>/dev/null | head -1) && \
-    if [ -n "$ARCHIVE" ]; then \
-        unzip -q "$ARCHIVE" -d /cubeclt_installer && \
-        echo ">>> Extraction complete" && \
-        rm -f "$ARCHIVE"; \
-    else \
-        echo "ERROR: No archive found in /cubeclt_download"; \
-        exit 1; \
-    fi)
+RUN echo ">>> Extracting STM32CubeCLT ${CUBECLT_VERSION}..." && \
+    mkdir -p /cubeclt_installer && \
+    unzip -q /tmp/installer.zip -d /cubeclt_installer && \
+    echo ">>> Extraction complete" && \
+    ls -la /cubeclt_installer/ && \
+    rm -f /tmp/installer.zip
 
 # ============================================
 # Stage 2: Runtime Image
