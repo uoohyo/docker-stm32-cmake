@@ -78,34 +78,56 @@ COPY --from=extractor /cubeclt_installer /opt/cubeclt-installer
 
 # Install STM32CubeCLT
 RUN echo ">>> Installing STM32CubeCLT ${CUBECLT_VERSION}..." && \
-    mkdir -p /opt/st/stm32cubeclt && \
-    (cd /opt/cubeclt-installer && \
+    cd /opt/cubeclt-installer && \
     INSTALLER=$(find . -maxdepth 2 -name "*.sh" -o -name "*.run" | head -1) && \
-    if [ -n "$INSTALLER" ]; then \
-        echo ">>> Found installer: $INSTALLER"; \
-        chmod +x "$INSTALLER"; \
-        EXTRACT_DIR="/tmp/stm32cubeclt-extract"; \
-        mkdir -p "$EXTRACT_DIR"; \
-        "$INSTALLER" --target "$EXTRACT_DIR" --noexec && \
-        echo ">>> Extraction complete, copying files..."; \
-        if [ -d "$EXTRACT_DIR/STM32CubeCLT" ]; then \
-            cp -r "$EXTRACT_DIR/STM32CubeCLT"/* /opt/st/stm32cubeclt/; \
-        elif [ -d "$EXTRACT_DIR" ] && [ "$(ls -A "$EXTRACT_DIR")" ]; then \
-            cp -r "$EXTRACT_DIR"/* /opt/st/stm32cubeclt/; \
-        fi; \
-        rm -rf "$EXTRACT_DIR"; \
-    elif [ -d "STM32CubeCLT" ]; then \
-        echo ">>> Found extracted directory, copying..."; \
-        cp -r STM32CubeCLT/* /opt/st/stm32cubeclt/; \
-    else \
-        echo ">>> Copying all installer files..."; \
-        cp -r ./* /opt/st/stm32cubeclt/; \
-    fi) && \
+    if [ -z "$INSTALLER" ]; then \
+        echo "ERROR: No installer found"; \
+        exit 1; \
+    fi && \
+    echo ">>> Found installer: $INSTALLER" && \
+    chmod +x "$INSTALLER" && \
+    echo ">>> Running installer with LICENSE_ALREADY_ACCEPTED=1..." && \
+    echo "" | LICENSE_ALREADY_ACCEPTED=1 "$INSTALLER" && \
+    echo ">>> Checking installation locations..." && \
+    find /opt -type d -name "*stm32cubeclt*" -o -name "*STM32CubeCLT*" 2>/dev/null && \
+    echo ">>> Finding actual installation..." && \
+    INSTALL_DIR=$(find /opt -type d \( -name "*stm32cubeclt*" -o -name "*STM32CubeCLT*" \) 2>/dev/null | grep -v "cubeclt-installer" | head -1) && \
+    if [ -z "$INSTALL_DIR" ] || [ ! -d "$INSTALL_DIR" ]; then \
+        echo "ERROR: Installation directory not found after running installer"; \
+        exit 1; \
+    fi && \
+    echo ">>> Found installation at: $INSTALL_DIR" && \
+    mkdir -p /opt/st/stm32cubeclt && \
+    cp -r "$INSTALL_DIR"/* /opt/st/stm32cubeclt/ && \
+    cd /workspace && \
     rm -rf /opt/cubeclt-installer && \
     echo ">>> Verifying installation..." && \
-    ([ -d "/opt/st/stm32cubeclt/GNU-tools-for-STM32" ] && echo "  ✓ GNU ARM Toolchain found" || echo "  ⚠ GNU ARM Toolchain not found") && \
-    ([ -d "/opt/st/stm32cubeclt/STM32CubeProgrammer" ] && echo "  ✓ STM32CubeProgrammer found" || echo "  ⚠ STM32CubeProgrammer not found") && \
-    echo ">>> Installation complete"
+    if [ ! -d "/opt/st/stm32cubeclt/GNU-tools-for-STM32" ]; then \
+        echo "ERROR: GNU ARM Toolchain not found after installation"; \
+        exit 1; \
+    fi && \
+    echo "  ✓ GNU ARM Toolchain found" && \
+    if [ ! -d "/opt/st/stm32cubeclt/STM32CubeProgrammer" ]; then \
+        echo "ERROR: STM32CubeProgrammer not found after installation"; \
+        exit 1; \
+    fi && \
+    echo "  ✓ STM32CubeProgrammer found" && \
+    echo ">>> Installation complete" && \
+    echo ">>> Cleaning up unnecessary files..." && \
+    find /opt/st/stm32cubeclt -type d -iname "documentation" -exec rm -rf {} + 2>/dev/null || true && \
+    find /opt/st/stm32cubeclt -type d -iname "doc" -exec rm -rf {} + 2>/dev/null || true && \
+    find /opt/st/stm32cubeclt -type d -iname "docs" -exec rm -rf {} + 2>/dev/null || true && \
+    find /opt/st/stm32cubeclt -type d -iname "examples" -exec rm -rf {} + 2>/dev/null || true && \
+    find /opt/st/stm32cubeclt -type d -iname "samples" -exec rm -rf {} + 2>/dev/null || true && \
+    find /opt/st/stm32cubeclt -type d -iname "uninstaller" -exec rm -rf {} + 2>/dev/null || true && \
+    rm -rf /opt/st/stm32cubeclt/*/share/doc 2>/dev/null || true && \
+    rm -rf /opt/st/stm32cubeclt/*/share/man 2>/dev/null || true && \
+    rm -rf /opt/st/stm32cubeclt/*/share/info 2>/dev/null || true && \
+    find /opt/st/stm32cubeclt -type f \( -name "*.pdf" -o -name "*.txt" -o -name "*.md" -o -name "*.html" \) -delete 2>/dev/null || true && \
+    find /opt/st/stm32cubeclt -type f -name "*.exe" -delete 2>/dev/null || true && \
+    find /opt/st/stm32cubeclt -type f -name "*.msi" -delete 2>/dev/null || true && \
+    find /opt/st/stm32cubeclt -type f -name "*.dmg" -delete 2>/dev/null || true && \
+    echo ">>> Cleanup complete"
 
 # Working Directory
 WORKDIR /workspace
