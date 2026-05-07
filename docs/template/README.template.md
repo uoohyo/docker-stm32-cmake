@@ -16,6 +16,13 @@
       <table>
         <tr><th>Version</th><th>Status</th></tr>
 <!-- VERSION_TABLE_START -->
+
+<tr><td>v1.21.0</td><td><a href="https://hub.docker.com/r/uoohyo/stm32-cmake/tags?name=1.21.0"><img src="https://img.shields.io/badge/available-2496ED?style=flat-square&logo=docker&logoColor=white" alt="available" /></a></td></tr>
+<tr><td>v1.20.0</td><td><a href="https://hub.docker.com/r/uoohyo/stm32-cmake/tags?name=1.20.0"><img src="https://img.shields.io/badge/available-2496ED?style=flat-square&logo=docker&logoColor=white" alt="available" /></a></td></tr>
+<tr><td>v1.19.0</td><td><a href="https://hub.docker.com/r/uoohyo/stm32-cmake/tags?name=1.19.0"><img src="https://img.shields.io/badge/available-2496ED?style=flat-square&logo=docker&logoColor=white" alt="available" /></a></td></tr>
+<tr><td>v1.18.0</td><td><a href="https://hub.docker.com/r/uoohyo/stm32-cmake/tags?name=1.18.0"><img src="https://img.shields.io/badge/available-2496ED?style=flat-square&logo=docker&logoColor=white" alt="available" /></a></td></tr>
+<tr><td>v1.17.0</td><td><a href="https://hub.docker.com/r/uoohyo/stm32-cmake/tags?name=1.17.0"><img src="https://img.shields.io/badge/available-2496ED?style=flat-square&logo=docker&logoColor=white" alt="available" /></a></td></tr>
+<tr><td>v1.16.0</td><td><a href="https://hub.docker.com/r/uoohyo/stm32-cmake/tags?name=1.16.0"><img src="https://img.shields.io/badge/available-2496ED?style=flat-square&logo=docker&logoColor=white" alt="available" /></a></td></tr>
 <!-- VERSION_TABLE_END -->
         <tr><td colspan="2" align="center"><a href="docs/versions.md"><b>📋 See all versions →</b></a></td></tr>
       </table>
