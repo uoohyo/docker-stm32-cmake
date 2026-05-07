@@ -120,7 +120,7 @@ jobs:
           ' | while read -r version; do
             BUILD_BADGE="https://img.shields.io/github/actions/workflow/status/${{ github.repository }}/build-all-versions.yml?branch=main&label=&style=flat-square"
             BUILD_LINK="https://github.com/${{ github.repository }}/actions/workflows/build-all-versions.yml"
-            echo "        <tr><td>v${version}</td><td><a href=\"${BUILD_LINK}\"><img src=\"${BUILD_BADGE}\" alt=\"build status\" /></a></td></tr>" >> /tmp/table-readme.md
+            echo "<tr><td>v${version}</td><td><a href=\"${BUILD_LINK}\"><img src=\"${BUILD_BADGE}\" alt=\"build status\" /></a></td></tr>" >> /tmp/table-readme.md
           done
 
           echo "Full table: $(wc -l < /tmp/table-full.md) rows"
