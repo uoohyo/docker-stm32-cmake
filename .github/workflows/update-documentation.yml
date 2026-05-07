@@ -48,7 +48,7 @@ jobs:
 
           while true; do
             RESPONSE=$(curl -s "https://hub.docker.com/v2/repositories/uoohyo/stm32-cmake/tags?page=${PAGE}&page_size=100")
-            TAGS=$(echo "$RESPONSE" | jq -r '.results[].name' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' || echo "")
+            TAGS=$(echo "$RESPONSE" | jq -r '.results[].name' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$' || echo "")
 
             if [ -z "$TAGS" ]; then
               break
@@ -126,47 +126,6 @@ jobs:
       - name: Update versions.md
         run: |
           echo "Updating docs/versions.md..."
-          mkdir -p docs/template
-          if [ ! -f docs/template/versions.template.md ]; then
-            echo "Creating versions.template.md..."
-            cat > docs/template/versions.template.md << 'EOF'
-# STM32CubeCLT Versions
-
-This page lists all available STM32CubeCLT versions and their Docker image availability.
-
-<!-- VERSION_TABLE_START -->
-<!-- VERSION_TABLE_END -->
-
-## Version Status Legend
-
-| Status | Description |
-| ------ | ----------- |
-| ✅ Available | Docker image is built and available on Docker Hub |
-| 🔨 Not Built Yet | Version detected but Docker image not yet built |
-| ⚠️ Not Supported | Linux version not supported or not available |
-
-## How to Use
-
-Pull a specific version:
-
-\`\`\`bash
-docker pull uoohyo/stm32-cmake:VERSION
-\`\`\`
-
-Or use the latest:
-
-\`\`\`bash
-docker pull uoohyo/stm32-cmake:latest
-\`\`\`
-
----
-
-**Last updated:** <!-- LAST_UPDATE -->
-
-Versions are automatically checked weekly. New versions are built and published automatically.
-EOF
-          fi
-
           cp docs/template/versions.template.md docs/versions.md
           TABLE=$(cat /tmp/table-full.md)
           TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
@@ -197,36 +156,26 @@ EOF
       - name: Update README.md
         run: |
           echo "Updating README.md..."
-          mkdir -p docs/template
-          if [ ! -f docs/template/README.template.md ]; then
-            echo "Using current README.md as template..."
-            cp README.md docs/template/README.template.md
-          fi
-
           cp docs/template/README.template.md README.md
           TABLE=$(cat /tmp/table-readme.md)
 
-          # Insert version table if VERSION_TABLE markers exist
-          if grep -q "<!-- VERSION_TABLE_START -->" README.md; then
-            awk -v table="$TABLE" '
-              /<!-- VERSION_TABLE_START -->/ {
-                print
-                print table
-                skip=1
-                next
-              }
-              /<!-- VERSION_TABLE_END -->/ {
-                skip=0
-                print
-                next
-              }
-              !skip
-            ' README.md > README.md.tmp
-            mv README.md.tmp README.md
-            echo "README.md updated successfully"
-          else
-            echo "No VERSION_TABLE markers in README.md, skipping update"
-          fi
+          awk -v table="$TABLE" '
+            /<!-- VERSION_TABLE_START -->/ {
+              print
+              print table
+              skip=1
+              next
+            }
+            /<!-- VERSION_TABLE_END -->/ {
+              skip=0
+              print
+              next
+            }
+            !skip
+          ' README.md > README.md.tmp
+
+          mv README.md.tmp README.md
+          echo "README.md updated successfully"
 
       - name: Commit and push
         run: |
