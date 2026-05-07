@@ -1,4 +1,3 @@
-# Automatically updates README.md and docs/versions.md after successful builds
 name: Update Versions Documentation
 
 on:
