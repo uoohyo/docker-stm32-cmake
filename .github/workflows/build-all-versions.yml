@@ -66,20 +66,17 @@ jobs:
           echo "Linux-supported: $(echo "$BUILD_VERSIONS" | jq '. | length')"
           echo "Latest: ${LATEST}"
 
-  build-and-push:
+  download-installers:
     needs: detect-versions
     runs-on: self-hosted
     strategy:
-      max-parallel: 1  # Build one at a time to avoid ST rate limiting
+      max-parallel: 3  # Parallel downloads (avoid ST rate limiting)
       matrix:
         version_info: ${{ fromJson(needs.detect-versions.outputs.build_versions) }}
       fail-fast: false
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
 
       - name: Setup Node.js for downloader
         uses: actions/setup-node@v4
@@ -103,11 +100,45 @@ jobs:
           mkdir -p cubeclt_download
           node .github/scripts/download-cubeclt.js
 
-      - name: Build Docker image
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cubeclt-installer-${{ matrix.version_info.version }}
+          path: cubeclt_download/*.zip
+          retention-days: 1
+
+  build-and-push:
+    needs: [detect-versions, download-installers]
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1  # Sequential builds
+      matrix:
+        version_info: ${{ fromJson(needs.detect-versions.outputs.build_versions) }}
+      fail-fast: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cubeclt-installer-${{ matrix.version_info.version }}
+          path: cubeclt_download
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: false
+          push: ${{ github.event.inputs.push_to_registry != 'false' }}
           load: true
           build-args: |
             CUBECLT_VERSION=${{ matrix.version_info.version }}
@@ -129,12 +160,6 @@ jobs:
               exit 1;
             fi
           "
-
-      - name: Push to Docker Hub
-        if: github.event.inputs.push_to_registry != 'false' && success()
-        run: |
-          docker push uoohyo/stm32-cmake:${{ matrix.version_info.version }}
-          echo "✓ Pushed uoohyo/stm32-cmake:${{ matrix.version_info.version }}"
 
   tag-latest:
     needs: [detect-versions, build-and-push]
