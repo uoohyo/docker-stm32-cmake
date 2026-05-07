@@ -99,7 +99,7 @@ RUN echo ">>> Installing STM32CubeCLT ${CUBECLT_VERSION}..." && \
     echo ">>> Found installation at: $INSTALL_DIR" && \
     mkdir -p /opt/st/stm32cubeclt && \
     cp -r "$INSTALL_DIR"/* /opt/st/stm32cubeclt/ && \
-    cd /workspace && \
+    cd / && \
     rm -rf /opt/cubeclt-installer && \
     echo ">>> Verifying installation..." && \
     if [ ! -d "/opt/st/stm32cubeclt/GNU-tools-for-STM32" ]; then \
