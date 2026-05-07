@@ -80,13 +80,17 @@ See [docs/versions.md](docs/versions.md) for all available versions.
 
 ## Building Locally
 
-To build this image yourself, you need an ST account (free registration at [my.st.com](https://my.st.com)):
+This project uses a two-step build process where the STM32CubeCLT installer is downloaded by GitHub Actions before Docker build.
 
-    docker build \
-      --build-arg ST_USERNAME="your-email@example.com" \
-      --build-arg ST_PASSWORD="your-password" \
-      --build-arg CUBECLT_VERSION="1.16.0" \
-      -t stm32-cmake:local .
+For local builds, you need to download the installer manually:
+
+1. Download STM32CubeCLT from [st.com](https://www.st.com/en/development-tools/stm32cubeclt.html) (requires free ST account)
+2. Place the `.zip` file in `cubeclt_download/` directory
+3. Build the image:
+
+       mkdir -p cubeclt_download
+       # Place your downloaded .zip file in cubeclt_download/
+       docker build --build-arg CUBECLT_VERSION="1.16.0" -t stm32-cmake:local .
 
 ## Included Tools
 
@@ -129,7 +133,7 @@ To build this image yourself, you need an ST account (free registration at [my.s
 
 [MIT License](./LICENSE)
 
-Copyright (c) 2024-2026 [uoohyo](https://github.com/uoohyo)
+Copyright (c) 2026 [uoohyo](https://github.com/uoohyo)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
