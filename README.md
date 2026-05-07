@@ -16,6 +16,13 @@
       <table>
         <tr><th>Version</th><th>Status</th></tr>
 <!-- VERSION_TABLE_START -->
+
+        <tr><td>v1.21.0</td><td><a href="https://github.com/uoohyo/docker-stm32-cmake/actions/workflows/build-all-versions.yml"><img src="https://img.shields.io/github/actions/workflow/status/uoohyo/docker-stm32-cmake/build-all-versions.yml?branch=main&label=&style=flat-square" alt="build status" /></a></td></tr>
+        <tr><td>v1.20.0</td><td><a href="https://github.com/uoohyo/docker-stm32-cmake/actions/workflows/build-all-versions.yml"><img src="https://img.shields.io/github/actions/workflow/status/uoohyo/docker-stm32-cmake/build-all-versions.yml?branch=main&label=&style=flat-square" alt="build status" /></a></td></tr>
+        <tr><td>v1.19.0</td><td><a href="https://github.com/uoohyo/docker-stm32-cmake/actions/workflows/build-all-versions.yml"><img src="https://img.shields.io/github/actions/workflow/status/uoohyo/docker-stm32-cmake/build-all-versions.yml?branch=main&label=&style=flat-square" alt="build status" /></a></td></tr>
+        <tr><td>v1.18.0</td><td><a href="https://github.com/uoohyo/docker-stm32-cmake/actions/workflows/build-all-versions.yml"><img src="https://img.shields.io/github/actions/workflow/status/uoohyo/docker-stm32-cmake/build-all-versions.yml?branch=main&label=&style=flat-square" alt="build status" /></a></td></tr>
+        <tr><td>v1.17.0</td><td><a href="https://github.com/uoohyo/docker-stm32-cmake/actions/workflows/build-all-versions.yml"><img src="https://img.shields.io/github/actions/workflow/status/uoohyo/docker-stm32-cmake/build-all-versions.yml?branch=main&label=&style=flat-square" alt="build status" /></a></td></tr>
+        <tr><td>v1.16.0</td><td><a href="https://github.com/uoohyo/docker-stm32-cmake/actions/workflows/build-all-versions.yml"><img src="https://img.shields.io/github/actions/workflow/status/uoohyo/docker-stm32-cmake/build-all-versions.yml?branch=main&label=&style=flat-square" alt="build status" /></a></td></tr>
 <!-- VERSION_TABLE_END -->
         <tr><td colspan="2" align="center"><a href="docs/versions.md"><b>📋 See all versions →</b></a></td></tr>
       </table>
