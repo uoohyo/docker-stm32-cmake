@@ -88,13 +88,13 @@ async function scrapeVersions() {
 
       versionList.sort((a, b) => {
         for (const k of ['major', 'minor', 'patch']) {
-          if (a[k] !== b[k]) return b[k] - a[k];
+          if (a[k] !== b[k]) return a[k] - b[k];  // Ascending: oldest-first
         }
         return 0;
       });
 
-      versionList[0].is_latest = true;
-      console.error(`Latest version: ${versionList[0].version}`);
+      versionList[versionList.length - 1].is_latest = true;
+      console.error(`Latest version: ${versionList[versionList.length - 1].version}`);
       console.error(`Total versions: ${versionList.length}`);
 
       console.log(JSON.stringify(versionList));
