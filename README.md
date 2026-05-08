@@ -10,7 +10,7 @@
 <!-- markdownlint-disable MD033 -->
 <table>
   <tr>
-    <td><img src="./.github/docker-stm32-cmake.jpg" width="256" height="256" alt="docker-stm32-cmake" /></td>
+    <td><img src="./.github/docker-stm32-cmake.png" width="256" height="256" alt="docker-stm32-cmake" /></td>
     <td valign="top">
       <b>STM32CubeCLT Version Build Status</b>
       <table>
