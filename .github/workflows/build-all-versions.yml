@@ -27,11 +27,11 @@ jobs:
       latest_version: ${{ steps.parse.outputs.latest_version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
         if: github.event.inputs.versions == ''
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
 
@@ -53,8 +53,8 @@ jobs:
           DELIMITER=$(openssl rand -hex 8)
           { echo "versions<<${DELIMITER}"; echo "${VERSIONS}"; echo "${DELIMITER}"; } >> $GITHUB_OUTPUT
 
-          # Linux-supported versions only (for the build matrix), sorted newest-first
-          BUILD_VERSIONS=$(echo "$VERSIONS" | jq '[.[] | select(.linux_supported == true)] | sort_by([.major, .minor, .patch] | map(tonumber)) | reverse')
+          # Linux-supported versions only (for the build matrix), sorted oldest-first
+          BUILD_VERSIONS=$(echo "$VERSIONS" | jq '[.[] | select(.linux_supported == true)] | sort_by([.major, .minor, .patch] | map(tonumber))')
           DELIMITER2=$(openssl rand -hex 8)
           { echo "build_versions<<${DELIMITER2}"; echo "${BUILD_VERSIONS}"; echo "${DELIMITER2}"; } >> $GITHUB_OUTPUT
 
@@ -76,10 +76,10 @@ jobs:
       fail-fast: false
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Setup Node.js for downloader
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
 
@@ -117,7 +117,7 @@ jobs:
       fail-fast: false
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Download installer artifact
         uses: actions/download-artifact@v4
