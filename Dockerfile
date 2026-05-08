@@ -158,7 +158,7 @@ RUN echo ">>> Creating non-root user..." && \
 # ============================================
 RUN echo ">>> Creating package inventory and removing package managers..." && \
     dpkg --get-selections | awk '{print $1}' > /opt/installed-packages.txt && \
-    apt-get remove -y --purge apt apt-get && \
+    apt-get remove -y --purge apt && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/* /var/lib/dpkg/info/* && \
     echo ">>> Package managers removed (inventory saved to /opt/installed-packages.txt)"
 
