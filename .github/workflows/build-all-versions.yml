@@ -134,11 +134,11 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push Docker image
+      - name: Build Docker image
         uses: docker/build-push-action@v7
         with:
           context: .
-          push: ${{ github.event.inputs.push_to_registry != 'false' }}
+          push: false
           load: true
           build-args: |
             CUBECLT_VERSION=${{ matrix.version_info.version }}
@@ -160,6 +160,21 @@ jobs:
               exit 1;
             fi
           "
+
+      - name: Push Docker image with attestations
+        if: ${{ github.event.inputs.push_to_registry != 'false' }}
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          build-args: |
+            CUBECLT_VERSION=${{ matrix.version_info.version }}
+          tags: |
+            uoohyo/stm32-cmake:${{ matrix.version_info.version }}
+          cache-from: type=gha
+          platforms: linux/amd64
+          provenance: true
+          sbom: true
 
   tag-latest:
     needs: [detect-versions, build-and-push]
