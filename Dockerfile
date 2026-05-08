@@ -40,29 +40,21 @@ LABEL org.opencontainers.image.licenses="MIT"
 # System dependencies
 # - libusb-1.0-0: runtime only (not -dev, headers not needed at runtime)
 # - udev omitted: device manager has no function inside a container
-# - temurin-21-jre: required by STM32CubeMX; Eclipse Temurin has faster CVE patches than Ubuntu's OpenJDK
+# - libglib2.0-0: required by STM32CubeProgrammer CLI (libglib-2.0.so.0, libgthread-2.0.so.0)
+# - Java: STM32CubeCLT bundles Temurin 21 JRE at /opt/st/stm32cubeclt/jre — no system JRE needed
 RUN echo ">>> Installing system dependencies..." && \
     apt-get update && \
     apt-get upgrade -y && \
-    apt-get install --no-install-recommends -y \
-        ca-certificates \
-        curl \
-        gnupg && \
-    mkdir -p /etc/apt/keyrings && \
-    curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public \
-        | gpg --dearmor -o /etc/apt/keyrings/adoptium.gpg && \
-    . /etc/os-release && \
-    echo "deb [signed-by=/etc/apt/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb ${VERSION_CODENAME} main" \
-        > /etc/apt/sources.list.d/adoptium.list && \
-    apt-get update && \
     apt-get install --no-install-recommends -y \
         build-essential \
         cmake \
         ninja-build \
         git \
         libusb-1.0-0 \
-        temurin-21-jre \
-        libxml2 && \
+        libglib2.0-0 \
+        libxml2 \
+        ca-certificates \
+        curl && \
     apt-get clean && rm -rf /var/lib/apt/lists/* && \
     echo ">>> Done."
 
