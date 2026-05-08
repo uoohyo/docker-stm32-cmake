@@ -97,8 +97,14 @@ RUN echo ">>> Installing STM32CubeCLT ${CUBECLT_VERSION}..." && \
         exit 1; \
     fi && \
     echo ">>> Found installation at: $INSTALL_DIR" && \
-    mkdir -p /opt/st/stm32cubeclt && \
-    cp -r "$INSTALL_DIR"/* /opt/st/stm32cubeclt/ && \
+    TARGET_DIR="/opt/st/stm32cubeclt" && \
+    if [ "$INSTALL_DIR" != "$TARGET_DIR" ]; then \
+        echo ">>> Moving installation to $TARGET_DIR..." && \
+        mkdir -p /opt/st && \
+        mv "$INSTALL_DIR" "$TARGET_DIR"; \
+    else \
+        echo ">>> Installation already at target location"; \
+    fi && \
     cd / && \
     rm -rf /opt/cubeclt-installer && \
     echo ">>> Verifying installation..." && \
