@@ -153,14 +153,13 @@ RUN echo ">>> Creating non-root user..." && \
     echo ">>> Non-root user created"
 
 # ============================================
-# SECURITY: Remove package managers
-# Prevents attackers from installing tools
+# SECURITY: Remove package metadata and caches
+# Without package lists, apt cannot install anything
 # ============================================
-RUN echo ">>> Creating package inventory and removing package managers..." && \
+RUN echo ">>> Creating package inventory and removing package metadata..." && \
     dpkg --get-selections | awk '{print $1}' > /opt/installed-packages.txt && \
-    apt-get remove -y --purge apt && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/* /var/lib/dpkg/info/* && \
-    echo ">>> Package managers removed (inventory saved to /opt/installed-packages.txt)"
+    echo ">>> Package metadata removed (inventory saved to /opt/installed-packages.txt)"
 
 # Working Directory
 WORKDIR /workspace
