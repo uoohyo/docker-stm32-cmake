@@ -160,8 +160,10 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
 
     const outFile = path.join(OUTPUT_DIR, suggestedFilename);
     let prevSize = -1, stable = 0;
-    while (stable < 3 && Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 5000));
+    const STABLE_CHECKS = 5;        // Increased from 3 to 5
+    const CHECK_INTERVAL = 8000;    // Increased from 5000ms to 8000ms (total: 40s vs 15s)
+    while (stable < STABLE_CHECKS && Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, CHECK_INTERVAL));
       const sz = fs.existsSync(outFile) ? fs.statSync(outFile).size : 0;
       if (sz > 0 && sz === prevSize) { stable++; } else { stable = 0; prevSize = sz; }
       if (sz > 0) console.error(`  ${Math.round(sz / 1024 / 1024)} MB downloaded...`);
@@ -169,6 +171,16 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
 
     const finalSize = fs.existsSync(outFile) ? fs.statSync(outFile).size : 0;
     if (finalSize < 1024 * 1024) throw new Error(`File too small (${finalSize} bytes) — likely an error page`);
+
+    // Verify ZIP integrity
+    console.error('Verifying ZIP integrity...');
+    const { execSync } = require('child_process');
+    try {
+      execSync(`unzip -t "${outFile}"`, { stdio: 'pipe' });
+      console.error('✓ ZIP integrity check passed');
+    } catch (err) {
+      throw new Error(`Corrupted ZIP file: ${err.message}`);
+    }
 
     console.error(`Download complete: ${outFile} (${Math.round(finalSize / 1024 / 1024)} MB)`);
     console.log(outFile); // stdout: path for calling scripts
@@ -194,7 +206,12 @@ async function main() {
       console.error(`\n[Attempt ${attempt}/${MAX_RETRIES}]`);
       const info = await getVersionInfo(VERSION);
       console.error(`Download URL: ${info.downloadUrl}`);
-      await downloadWithAuth(info);
+      const outFile = await downloadWithAuth(info);
+
+      // Final verification in retry loop (redundant with downloadWithAuth, but ensures robustness)
+      const { execSync } = require('child_process');
+      execSync(`unzip -t "${outFile}"`, { stdio: 'pipe' });
+      console.error('✓ Download and verification successful');
       return;
     } catch (e) {
       lastError = e;
