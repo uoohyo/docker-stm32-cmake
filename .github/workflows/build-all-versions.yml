@@ -70,7 +70,7 @@ jobs:
     needs: detect-versions
     runs-on: self-hosted
     strategy:
-      max-parallel: 3  # Parallel downloads (avoid ST rate limiting)
+      max-parallel: 2  # Reduced from 3 to avoid ST rate limiting and network issues
       matrix:
         version_info: ${{ fromJson(needs.detect-versions.outputs.build_versions) }}
       fail-fast: false

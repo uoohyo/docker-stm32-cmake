@@ -17,7 +17,12 @@ COPY cubeclt_download/*.zip /tmp/installer.zip
 
 RUN echo ">>> Extracting STM32CubeCLT ${CUBECLT_VERSION}..." && \
     mkdir -p /cubeclt_installer && \
-    unzip -q /tmp/installer.zip -d /cubeclt_installer && \
+    echo "  Verifying ZIP integrity..." && \
+    unzip -t /tmp/installer.zip > /dev/null || { \
+        echo "ERROR: Corrupted ZIP file"; exit 1; \
+    } && \
+    echo "  Extracting ZIP..." && \
+    unzip /tmp/installer.zip -d /cubeclt_installer && \
     rm -f /tmp/installer.zip && \
     echo ">>> Extraction complete"
 
