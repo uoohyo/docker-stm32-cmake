@@ -206,7 +206,12 @@ async function main() {
       console.error(`\n[Attempt ${attempt}/${MAX_RETRIES}]`);
       const info = await getVersionInfo(VERSION);
       console.error(`Download URL: ${info.downloadUrl}`);
-      await downloadWithAuth(info);
+      const outFile = await downloadWithAuth(info);
+
+      // Final verification in retry loop (redundant with downloadWithAuth, but ensures robustness)
+      const { execSync } = require('child_process');
+      execSync(`unzip -t "${outFile}"`, { stdio: 'pipe' });
+      console.error('✓ Download and verification successful');
       return;
     } catch (e) {
       lastError = e;
