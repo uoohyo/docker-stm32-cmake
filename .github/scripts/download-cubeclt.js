@@ -151,7 +151,7 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
     await page.goto(downloadUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
 
     // Poll until the download file appears and stabilises
-    const deadline = Date.now() + 15 * 60 * 1000; // 15 min
+    const deadline = Date.now() + 20 * 60 * 1000; // 20 min (increased to allow retry logic within 30-min job timeout)
     while (!suggestedFilename && !downloadFailed && Date.now() < deadline) {
       await new Promise(r => setTimeout(r, 2000));
     }
@@ -160,8 +160,8 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
 
     const outFile = path.join(OUTPUT_DIR, suggestedFilename);
     let prevSize = -1, stable = 0;
-    const STABLE_CHECKS = 5;        // Increased from 3 to 5
-    const CHECK_INTERVAL = 8000;    // Increased from 5000ms to 8000ms (total: 40s vs 15s)
+    const STABLE_CHECKS = 5;        // 5 checks × 5s = 25s (balanced: safer than 15s, faster than 40s)
+    const CHECK_INTERVAL = 5000;    // 5 seconds between checks
     while (stable < STABLE_CHECKS && Date.now() < deadline) {
       await new Promise(r => setTimeout(r, CHECK_INTERVAL));
       const sz = fs.existsSync(outFile) ? fs.statSync(outFile).size : 0;
@@ -172,7 +172,7 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
     const finalSize = fs.existsSync(outFile) ? fs.statSync(outFile).size : 0;
     if (finalSize < 1024 * 1024) throw new Error(`File too small (${finalSize} bytes) — likely an error page`);
 
-    // Verify ZIP integrity
+    // Verify ZIP integrity to catch corrupted/incomplete downloads
     console.error('Verifying ZIP integrity...');
     const { execSync } = require('child_process');
     try {

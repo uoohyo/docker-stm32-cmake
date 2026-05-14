@@ -69,8 +69,9 @@ jobs:
   download-installers:
     needs: detect-versions
     runs-on: self-hosted
+    timeout-minutes: 30  # Explicit timeout to handle large files (prevent 20-min runner timeout)
     strategy:
-      max-parallel: 2  # Reduced from 3 to avoid ST rate limiting and network issues
+      max-parallel: 3  # Optimal for self-hosted runner to avoid timeout while maintaining throughput
       matrix:
         version_info: ${{ fromJson(needs.detect-versions.outputs.build_versions) }}
       fail-fast: false
