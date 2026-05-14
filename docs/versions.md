@@ -2,7 +2,7 @@
 
 This page lists all available STM32CubeCLT versions and their Docker image availability.
 
-**Last updated:** 2026-05-08 18:42:55 UTC
+**Last updated:** 2026-05-14 09:03:03 UTC
 
 <!-- VERSION_TABLE_START -->
 
