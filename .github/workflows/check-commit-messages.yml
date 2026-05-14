@@ -1,0 +1,59 @@
+name: Check Commit Messages
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  check-gitmoji:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Verify gitmoji usage
+        run: |
+          echo "🔍 Checking commit messages for gitmoji..."
+
+          FAILED=0
+          COMMITS=$(git log --format=%s origin/${{ github.base_ref }}..HEAD)
+
+          while IFS= read -r msg; do
+            # Skip empty lines
+            [ -z "$msg" ] && continue
+
+            # Check if commit message starts with gitmoji
+            if ! echo "$msg" | grep -qE "^(✨|🐛|📝|⚡|🔧|🔒|🔥|🎨|♻️|⬆️|⬇️|📌|👷|💚|🔀|🗑️|🚀|💡|🏗️|🩹|🌐|📄|🥅|💫|🏷️|🚨|🔊|🔇|👥|🚸|🍱|♿|💬|🗃️|🔐|🧪|💩|⏪|🔀|📦|👽|🚚|📱|🤡|🥚|🙈|📸|⚗️|🔍|🏷️|🌱|🚩|🥅|💫)"; then
+              echo "❌ Missing gitmoji: $msg"
+              FAILED=1
+            else
+              echo "✅ $msg"
+            fi
+          done <<< "$COMMITS"
+
+          if [ $FAILED -eq 1 ]; then
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "❌ Some commits are missing gitmoji prefix"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "Common gitmoji prefixes:"
+            echo "  ✨ feat: add new feature"
+            echo "  🐛 fix: resolve bug"
+            echo "  📝 docs: update documentation"
+            echo "  ⚡ perf: optimize performance"
+            echo "  🔧 chore: update configuration"
+            echo "  🔒 security: improve security"
+            echo "  🔥 chore: remove code/files"
+            echo "  ♻️ refactor: refactor code"
+            echo ""
+            echo "See: https://gitmoji.dev"
+            exit 1
+          fi
+
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ All commits use gitmoji!"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

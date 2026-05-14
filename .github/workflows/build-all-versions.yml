@@ -107,11 +107,61 @@ jobs:
           path: cubeclt_download/*.zip
           retention-days: 1
 
-  build-and-push:
+  build:
     needs: [detect-versions, download-installers]
     runs-on: ubuntu-latest
     strategy:
-      max-parallel: 1  # Sequential builds
+      max-parallel: 10  # Parallel builds (from docker-ccstudio-ide optimization)
+      matrix:
+        version_info: ${{ fromJson(needs.detect-versions.outputs.build_versions) }}
+      fail-fast: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Download installer artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: cubeclt-installer-${{ matrix.version_info.version }}
+          path: cubeclt_download
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          load: true
+          provenance: false  # Disable provenance (docker-ccstudio-ide fix for Docker Hub 400 errors)
+          build-args: |
+            CUBECLT_VERSION=${{ matrix.version_info.version }}
+          tags: |
+            uoohyo/stm32-cmake:${{ matrix.version_info.version }}
+          cache-from: type=gha,scope=build-${{ matrix.version_info.version }}
+          cache-to: type=gha,mode=max,scope=build-${{ matrix.version_info.version }}
+          platforms: linux/amd64
+
+      - name: Test Docker image
+        run: |
+          echo "Testing STM32CubeCLT ${{ matrix.version_info.version }}..."
+          docker run --rm uoohyo/stm32-cmake:${{ matrix.version_info.version }} bash -c "
+            if command -v arm-none-eabi-gcc &> /dev/null; then
+              echo '✓ ARM GCC found';
+              arm-none-eabi-gcc --version | head -1;
+            else
+              echo '✗ ARM GCC not found';
+              exit 1;
+            fi
+          "
+
+  push:
+    needs: [detect-versions, build]
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.push_to_registry != 'false' }}
+    strategy:
+      max-parallel: 1  # Sequential push (prevents Docker Hub race conditions)
       matrix:
         version_info: ${{ fromJson(needs.detect-versions.outputs.build_versions) }}
       fail-fast: false
@@ -134,50 +184,41 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build Docker image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: false
-          load: true
-          build-args: |
-            CUBECLT_VERSION=${{ matrix.version_info.version }}
-          tags: |
-            uoohyo/stm32-cmake:${{ matrix.version_info.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64
-
-      - name: Test Docker image
+      - name: Build and push Docker image with retry
         run: |
-          echo "Testing STM32CubeCLT ${{ matrix.version_info.version }}..."
-          docker run --rm uoohyo/stm32-cmake:${{ matrix.version_info.version }} bash -c "
-            if command -v arm-none-eabi-gcc &> /dev/null; then
-              echo '✓ ARM GCC found';
-              arm-none-eabi-gcc --version | head -1;
-            else
-              echo '✗ ARM GCC not found';
-              exit 1;
-            fi
-          "
+          IMAGE="uoohyo/stm32-cmake:${{ matrix.version_info.version }}"
+          MAX_ATTEMPTS=3
+          ATTEMPT=1
 
-      - name: Push Docker image with attestations
-        if: ${{ github.event.inputs.push_to_registry != 'false' }}
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: true
-          build-args: |
-            CUBECLT_VERSION=${{ matrix.version_info.version }}
-          tags: |
-            uoohyo/stm32-cmake:${{ matrix.version_info.version }}
-          cache-from: type=gha
-          platforms: linux/amd64
-          provenance: true
-          sbom: true
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "→ Push attempt $ATTEMPT of $MAX_ATTEMPTS for ${IMAGE}"
+
+            # Build from cache and push
+            if docker buildx build \
+              --push \
+              --provenance=false \
+              --build-arg CUBECLT_VERSION=${{ matrix.version_info.version }} \
+              --tag "${IMAGE}" \
+              --cache-from type=gha,scope=build-${{ matrix.version_info.version }} \
+              --platform linux/amd64 \
+              .; then
+              echo "✅ Push successful for ${IMAGE}"
+              exit 0
+            fi
+
+            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+              echo "⚠️ Push failed, retrying in 60 seconds..."
+              sleep 60
+            fi
+
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+
+          echo "❌ Push failed after $MAX_ATTEMPTS attempts"
+          exit 1
 
   tag-latest:
-    needs: [detect-versions, build-and-push]
+    needs: [detect-versions, push]
     runs-on: ubuntu-latest
     if: '!cancelled() && github.event.inputs.push_to_registry != ''false'''
     steps:
@@ -210,7 +251,7 @@ jobs:
           docker push uoohyo/stm32-cmake:latest
 
   handle-failure:
-    needs: [detect-versions, build-and-push]
+    needs: [detect-versions, build, push]
     runs-on: ubuntu-latest
     if: failure() && !cancelled()
     permissions:
