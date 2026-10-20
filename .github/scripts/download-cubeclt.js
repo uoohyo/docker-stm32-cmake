@@ -87,11 +87,12 @@ async function getVersionInfo(version) {
       // Current ST versions may expose a download path but no CAS link.
       // Follow the official download URL and handle its authentication
       // redirect instead of guessing an ST login service URL.
-      console.error(`No explicit CAS link for ${version}; using download redirect`);
-      return {
-        downloadUrl: `https://www.st.com${dlMatch[1]}`,
-        casLoginUrl: null,
-      };
+      // Official ST downloads for this version no longer provide the CAS
+      // service URL needed for automated authentication. Retrying the same
+      // anonymous endpoint only causes long, repetitive CI failures.
+      const error = new Error(`ST_AUTH_FLOW_CHANGED for ${version}: no CAS login URL. Download the official ZIP through ST and configure CUBECLT_INSTALLER_CACHE_DIR on the trusted runner.`);
+      error.nonRetryable = true;
+      throw error;
     }
 
     const targetPosition = dlMatch.index;
@@ -315,6 +316,7 @@ async function main() {
     } catch (e) {
       lastError = e;
       console.error(`[Attempt ${attempt}] Failed: ${e.message}`);
+      if (e.nonRetryable) break;
       if (attempt < MAX_RETRIES) {
         const delay = attempt * 15000;
         console.error(`Retrying in ${delay / 1000}s...`);
