@@ -3,6 +3,11 @@ name: Build All STM32CubeCLT Versions
 on:
   push:
     branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'entrypoint.sh'
+      - '.github/scripts/**'
+      - '.github/workflows/build-all-versions.yml'
   workflow_dispatch:
     inputs:
       versions:
@@ -14,6 +19,11 @@ on:
         type: boolean
         required: false
         default: true
+      force_rebuild:
+        description: 'Rebuild all selected versions even if they exist on Docker Hub'
+        type: boolean
+        required: false
+        default: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -25,6 +35,7 @@ jobs:
       versions: ${{ steps.parse.outputs.versions }}
       build_versions: ${{ steps.parse.outputs.build_versions }}
       latest_version: ${{ steps.parse.outputs.latest_version }}
+      has_versions: ${{ steps.parse.outputs.has_versions }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -53,21 +64,49 @@ jobs:
           DELIMITER=$(openssl rand -hex 8)
           { echo "versions<<${DELIMITER}"; echo "${VERSIONS}"; echo "${DELIMITER}"; } >> $GITHUB_OUTPUT
 
-          # Linux-supported versions only (for the build matrix), sorted oldest-first
-          BUILD_VERSIONS=$(echo "$VERSIONS" | jq '[.[] | select(.linux_supported == true)] | sort_by([.major, .minor, .patch] | map(tonumber))')
+          # Linux-supported versions, sorted oldest-first
+          ALL_VERSIONS=$(printf '%s' "$VERSIONS" | jq -c             '[.[] | select(.linux_supported == true)] | sort_by([.major, .minor, .patch] | map(tonumber))')
+          LATEST=$(printf '%s' "$ALL_VERSIONS" | jq -r '.[-1].version // empty')
+          if [ -z "$LATEST" ]; then
+            echo "::error::No Linux-supported STM32CubeCLT versions were discovered."
+            exit 1
+          fi
+
+          # Explicitly selected versions should be built for diagnostic reruns.
+          if [ -n "${{ github.event.inputs.versions }}" ] || [ "${{ github.event.inputs.force_rebuild }}" = "true" ]; then
+            BUILD_VERSIONS="$ALL_VERSIONS"
+            echo "Explicit build selection / force_rebuild: rebuilding selected versions"
+          else
+            # Fail on registry errors rather than inadvertently rebuilding all versions.
+            TAGS_FILE=$(mktemp)
+            NEXT_URL="https://hub.docker.com/v2/repositories/uoohyo/stm32-cmake/tags?page_size=100"
+            while [ -n "$NEXT_URL" ]; do
+              RESPONSE=$(curl -fsSL --retry 3 --retry-delay 2 "$NEXT_URL")
+              printf '%s' "$RESPONSE" | jq -e '.results | type == "array"' > /dev/null
+              printf '%s' "$RESPONSE" | jq -r '.results[].name'                 | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' >> "$TAGS_FILE" || true
+              NEXT_URL=$(printf '%s' "$RESPONSE" | jq -r '.next // empty')
+            done
+            TAGS_JSON=$(sort -u "$TAGS_FILE" | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            rm -f "$TAGS_FILE"
+            BUILD_VERSIONS=$(printf '%s' "$ALL_VERSIONS" | jq -c --argjson tags "$TAGS_JSON"               '[.[] | select(.version as $v | ($tags | index($v)) == null)]')
+            echo "Registry contains $(printf '%s' "$TAGS_JSON" | jq 'length') released versions"
+          fi
+
           DELIMITER2=$(openssl rand -hex 8)
-          { echo "build_versions<<${DELIMITER2}"; echo "${BUILD_VERSIONS}"; echo "${DELIMITER2}"; } >> $GITHUB_OUTPUT
-
-          # Latest = highest version (last after ascending sort)
-          LATEST=$(echo "$BUILD_VERSIONS" | jq -r '.[-1].version')
-          echo "latest_version=${LATEST}" >> $GITHUB_OUTPUT
-
-          echo "Total versions: $(echo "$VERSIONS" | jq '. | length')"
-          echo "Linux-supported: $(echo "$BUILD_VERSIONS" | jq '. | length')"
-          echo "Latest: ${LATEST}"
+          { echo "build_versions<<${DELIMITER2}"; echo "${BUILD_VERSIONS}"; echo "${DELIMITER2}"; } >> "$GITHUB_OUTPUT"
+          echo "latest_version=${LATEST}" >> "$GITHUB_OUTPUT"
+          COUNT=$(printf '%s' "$BUILD_VERSIONS" | jq 'length')
+          if [ "$COUNT" -eq 0 ]; then
+            echo "has_versions=false" >> "$GITHUB_OUTPUT"
+            echo "All versions already exist: skipping installer downloads and builds."
+          else
+            echo "has_versions=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Linux-supported total: $(printf '%s' "$ALL_VERSIONS" | jq 'length'); to build: $COUNT"
 
   download-installers:
     needs: detect-versions
+    if: needs.detect-versions.outputs.has_versions == 'true'
     runs-on: self-hosted
     timeout-minutes: 30  # Explicit timeout to handle large files (prevent 20-min runner timeout)
     strategy:
@@ -110,6 +149,7 @@ jobs:
 
   build:
     needs: [detect-versions, download-installers]
+    if: needs.detect-versions.outputs.has_versions == 'true'
     runs-on: ubuntu-latest
     strategy:
       max-parallel: 10  # Parallel builds (from docker-ccstudio-ide optimization)
@@ -160,7 +200,7 @@ jobs:
   push:
     needs: [detect-versions, build]
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.push_to_registry != 'false' }}
+    if: ${{ needs.detect-versions.outputs.has_versions == 'true' && github.event.inputs.push_to_registry != 'false' }}
     strategy:
       max-parallel: 1  # Sequential push (prevents Docker Hub race conditions)
       matrix:
@@ -221,7 +261,7 @@ jobs:
   tag-latest:
     needs: [detect-versions, push]
     runs-on: ubuntu-latest
-    if: '!cancelled() && github.event.inputs.push_to_registry != ''false'''
+    if: ${{ needs.push.result == 'success' && github.event.inputs.push_to_registry != 'false' }}
     steps:
       - name: Log in to Docker Hub
         uses: docker/login-action@v4
