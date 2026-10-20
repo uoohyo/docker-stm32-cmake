@@ -225,13 +225,37 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
       });
     }
 
-    // Poll until the download file appears and stabilises
-    const deadline = Date.now() + 20 * 60 * 1000; // 20 min (increased to allow retry logic within 30-min job timeout)
-    while (!suggestedFilename && !downloadFailed && Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 2000));
+    // Do not hold the self-hosted runner for the full transfer timeout when
+    // ST never started a download (e.g. login/consent page).
+    const downloadStartDeadline = Date.now() + 90000;
+    while (!suggestedFilename && !downloadFailed && Date.now() < downloadStartDeadline) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
     if (downloadFailed) throw new Error('Download was canceled by the browser');
-    if (!suggestedFilename) throw new Error('Download did not start — check if the version is available');
+    if (!suggestedFilename) {
+      let pagePath = 'unknown';
+      try {
+        const u = new URL(page.url());
+        // Do not log query parameters: ST can place authorization tokens there.
+        pagePath = u.origin + u.pathname;
+      } catch {}
+
+      const signals = await page.evaluate(() => {
+        const visible = document.body?.innerText?.toLowerCase() || '';
+        return {
+          login: /log[ -]?in|sign[ -]?in/.test(visible),
+          guest: /download as (a )?guest/.test(visible),
+          license: /license agreement|i accept/.test(visible),
+          usernameInput: !!document.querySelector('input[name="username"]'),
+          passwordInput: !!document.querySelector('input[type="password"]'),
+        };
+      }).catch(() => ({ unavailable: true }));
+      throw new Error(`Download did not start within 90s; page=${pagePath}; signals=${JSON.stringify(signals)}`);
+    }
+
+    // Once the browser has started downloading, allow enough time for the
+    // large STM32CubeCLT ZIP to be transferred and verified.
+    const deadline = Date.now() + 20 * 60 * 1000;
 
     const outFile = path.join(OUTPUT_DIR, suggestedFilename);
     let prevSize = -1, stable = 0;
