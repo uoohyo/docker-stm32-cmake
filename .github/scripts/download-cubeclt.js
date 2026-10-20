@@ -67,14 +67,48 @@ async function getVersionInfo(version) {
     );
     if (!dlMatch) throw new Error(`Download path not found for ${version}`);
 
-    const casMatch = html.match(
-      new RegExp(`data-reg-required-link-path="(https://my\\.st\\.com/cas/login[^"]*product=STM32CubeCLT-Lnx\\.version=${esc(version)}[^"]*)"`, 'i')
-    );
-    if (!casMatch) throw new Error(`CAS login URL not found for ${version}`);
+    // ST may use HTML-encoded or version-agnostic CAS URLs. Avoid tying
+    // authentication discovery to a specific product query-string layout.
+    const candidates = [...html.matchAll(/data-reg-required-link-path=(["'])(.*?)\1/gi)]
+      .map(match => {
+        const value = match[2].replace(/&amp;/g, '&');
+        try {
+          const parsed = new URL(value, 'https://my.st.com');
+          if (parsed.protocol !== 'https:' || parsed.hostname !== 'my.st.com' ||
+              !parsed.pathname.startsWith('/cas/login')) return null;
+          return { url: parsed.href, position: match.index };
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    if (candidates.length === 0) {
+      throw new Error(`CAS login link not found in ST version listing for ${version}`);
+    }
+
+    const targetPosition = dlMatch.index;
+    const containsVersion = candidate => {
+      try {
+        return decodeURIComponent(candidate.url).includes(`STM32CubeCLT-Lnx.version=${version}`);
+      } catch {
+        return candidate.url.includes(version);
+      }
+    };
+
+    // Prefer a version-specific link; otherwise use the nearest ST CAS
+    // login link. The subsequent file URL remains tied to the requested version.
+    const casMatch = candidates.find(containsVersion) ||
+      candidates.sort((a, b) =>
+        Math.abs(a.position - targetPosition) - Math.abs(b.position - targetPosition))[0];
+
+    if (!containsVersion(casMatch)) {
+      console.error(`No exact CAS URL for ${version}; using closest ST CAS login link`);
+    }
 
     return {
       downloadUrl: `https://www.st.com${dlMatch[1]}`,
-      casLoginUrl: casMatch[1].replace(/&amp;/g, '&'),
+      casLoginUrl: casMatch.url,
     };
   } finally {
     await browser.close();
