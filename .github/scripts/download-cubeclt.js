@@ -84,7 +84,14 @@ async function getVersionInfo(version) {
       .filter(Boolean);
 
     if (candidates.length === 0) {
-      throw new Error(`CAS login link not found in ST version listing for ${version}`);
+      // Current ST versions may expose a download path but no CAS link.
+      // Follow the official download URL and handle its authentication
+      // redirect instead of guessing an ST login service URL.
+      console.error(`No explicit CAS link for ${version}; using download redirect`);
+      return {
+        downloadUrl: `https://www.st.com${dlMatch[1]}`,
+        casLoginUrl: null,
+      };
     }
 
     const targetPosition = dlMatch.index;
@@ -128,38 +135,8 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
     });
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
-    // Navigate to CAS login (service= param ties the ticket to www.st.com)
-    // Use 'load' not 'networkidle2' — ST login page has persistent background
-    // requests that prevent networkidle2 from ever firing.
-    console.error('Navigating to CAS login...');
-    await page.goto(casLoginUrl, { waitUntil: 'load', timeout: 90000 });
-    console.error(`  URL: ${page.url()}`);
-
-    if (page.url().includes('my.st.com')) {
-      console.error('  Waiting for username input...');
-      await page.waitForSelector('input[name="username"]', { timeout: 30000 });
-      console.error('  Typing credentials...');
-      await page.click('input[name="username"]');
-      await page.type('input[name="username"]', USERNAME, { delay: 50 });
-      await page.click('input[name="password"]');
-      await page.type('input[name="password"]', PASSWORD, { delay: 50 });
-
-      console.error('  Submitting via Enter key...');
-      await Promise.all([
-        page.waitForNavigation({ waitUntil: 'load', timeout: 90000 }),
-        page.keyboard.press('Enter'),
-      ]);
-
-      console.error(`  After login URL: ${page.url()}`);
-      if (page.url().includes('my.st.com') || page.url().includes('cas/login')) {
-        throw new Error('Login failed — still on CAS page. Check ST credentials.');
-      }
-      console.error('  Login succeeded');
-    } else {
-      console.error('  Already authenticated');
-    }
-
-    // Set up Puppeteer CDP download to OUTPUT_DIR
+    // Register download handlers BEFORE opening a download URL, since ST
+    // may send the file immediately or redirect through its login service.
     if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
     const client = await page.createCDPSession();
@@ -171,18 +148,82 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
 
     let suggestedFilename = null;
     let downloadFailed = false;
-
-    client.on('Browser.downloadWillBegin', (e) => {
-      suggestedFilename = e.suggestedFilename;
+    client.on('Browser.downloadWillBegin', (event) => {
+      suggestedFilename = event.suggestedFilename;
       console.error(`  Download started: ${suggestedFilename}`);
     });
-    client.on('Browser.downloadProgress', (e) => {
-      if (e.state === 'canceled') downloadFailed = true;
+    client.on('Browser.downloadProgress', (event) => {
+      if (event.state === 'canceled') downloadFailed = true;
     });
 
-    // Navigate to download URL (may not fully "load" — that's expected for a file)
-    console.error('Navigating to download URL...');
-    await page.goto(downloadUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+    const isCasPage = () => {
+      try {
+        const url = new URL(page.url());
+        return url.protocol === 'https:' && url.hostname === 'my.st.com';
+      } catch {
+        return false;
+      }
+    };
+
+    // First try the version-specific CAS URL when provided, otherwise
+    // allow the official download endpoint to redirect to authentication.
+    console.error('Opening ST authentication/download URL...');
+    await page.goto(casLoginUrl || downloadUrl, {
+      waitUntil: 'domcontentloaded',
+      timeout: 90000,
+    }).catch(error => {
+      // Chromium aborts navigation when the response is a file download.
+      console.error(`  Initial navigation: ${error.message}`);
+    });
+
+    // If ST displays an intermediate page rather than redirecting, use an
+    // official CAS link offered by that page; never follow arbitrary hosts.
+    if (!suggestedFilename && !isCasPage()) {
+      const loginLink = await page.evaluate(() => {
+        const anchors = [...document.querySelectorAll('a[href]')];
+        for (const anchor of anchors) {
+          try {
+            const url = new URL(anchor.href);
+            if (url.protocol === 'https:' && url.hostname === 'my.st.com' &&
+                url.pathname.startsWith('/cas/login')) return url.href;
+          } catch {}
+        }
+        return null;
+      }).catch(() => null);
+      if (loginLink) {
+        console.error('Following ST login link from download page...');
+        await page.goto(loginLink, { waitUntil: 'domcontentloaded', timeout: 90000 });
+      }
+    }
+
+    if (isCasPage()) {
+      console.error('  Waiting for ST CAS username input...');
+      await page.waitForSelector('input[name="username"]', { timeout: 30000 });
+      console.error('  Entering ST credentials...');
+      await page.type('input[name="username"]', USERNAME, { delay: 50 });
+      await page.type('input[name="password"]', PASSWORD, { delay: 50 });
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 90000 }),
+        page.keyboard.press('Enter'),
+      ]);
+      if (isCasPage()) throw new Error('ST login failed — still on CAS page');
+      console.error('  Login navigation succeeded');
+    }
+
+    // In some ST flows the authenticated redirect begins a file download.
+    // Otherwise request the exact version URL with the same browser session.
+    if (!suggestedFilename) {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+    if (!suggestedFilename && !downloadFailed) {
+      console.error('Requesting STM32CubeCLT download...');
+      await page.goto(downloadUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: 30000,
+      }).catch(error => {
+        console.error(`  Download navigation: ${error.message}`);
+      });
+    }
 
     // Poll until the download file appears and stabilises
     const deadline = Date.now() + 20 * 60 * 1000; // 20 min (increased to allow retry logic within 30-min job timeout)
