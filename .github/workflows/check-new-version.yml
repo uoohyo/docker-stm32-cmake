@@ -121,7 +121,7 @@ jobs:
           fi
 
       - name: Trigger build for missing versions
-        if: github.event_name != 'push' && steps.missing-versions.outputs.count > 0
+        if: github.event_name != 'push' && steps.missing-versions.outputs.count > 0 && vars.ST_AUTO_BUILD_NEW_VERSIONS == 'true'
         uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -157,13 +157,22 @@ jobs:
             const count = missingVersions.length;
 
             const versionList = missingVersions.map(v => `- ${v.version}`).join('\n');
+            const title = `New STM32CubeCLT versions: ${missingVersions.map(v => v.version).join(', ')}`;
+            const existing = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'new-version', per_page: 100
+            });
+            if (existing.some(issue => issue.title === title)) {
+              console.log(`Version issue already open: ${title}`);
+              return;
+            }
 
             const issue = await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `New STM32CubeCLT versions detected: ${count} version(s)`,
-              body: `**${count} new STM32CubeCLT version(s)** have been detected and are being built automatically.\n\n## Missing versions:\n${versionList}\n\n## Latest version:\n**${latestVersion}**\n\n## Status:\n🔨 Building...\n\n## Links:\n- [ST Download Page](https://www.st.com/en/development-tools/stm32cubeclt.html)\n- [Build Workflow](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/workflows/build-all-versions.yml)\n\n**Note:** ST account credentials are required for building. Make sure \`ST_USERNAME\` and \`ST_PASSWORD\` secrets are up to date.\n\nThis issue was created automatically by the weekly version check workflow.`,
-              labels: ['automation', 'new-version', 'building']
+              title,
+              body: `**${count} new STM32CubeCLT version(s)** have been detected. Automatic builds are opt-in while ST download authentication is under repair.\n\n## Missing versions:\n${versionList}\n\n## Latest version:\n**${latestVersion}**\n\n## Status:\n⏳ Awaiting verified installer or enabled automatic build.\n\n## Links:\n- [ST Download Page](https://www.st.com/en/development-tools/stm32cubeclt.html)\n- [Build Workflow](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/workflows/build-all-versions.yml)\n\n**Note:** ST account credentials are required for building. Make sure \`ST_USERNAME\` and \`ST_PASSWORD\` secrets are up to date.\n\nThis issue was created automatically by the weekly version check workflow.`,
+              labels: ['automation', 'new-version']
             });
 
             console.log(`Issue created: #${issue.data.number}`);

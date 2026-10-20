@@ -130,13 +130,29 @@ jobs:
           CUBECLT_VERSION: ${{ matrix.version_info.version }}
           ST_USERNAME: ${{ secrets.ST_USERNAME }}
           ST_PASSWORD: ${{ secrets.ST_PASSWORD }}
+          CUBECLT_INSTALLER_CACHE_DIR: ${{ vars.CUBECLT_INSTALLER_CACHE_DIR }}
           OUTPUT_DIR: cubeclt_download
         run: |
+          set -euo pipefail
+          mkdir -p cubeclt_download
+
+          # Optional self-hosted runner cache populated via ST's official
+          # authenticated download page. It avoids browser login fragility.
+          if [ -n "${CUBECLT_INSTALLER_CACHE_DIR:-}" ]; then
+            CACHE_FILE="${CUBECLT_INSTALLER_CACHE_DIR}/${CUBECLT_VERSION}/stm32cubeclt_${CUBECLT_VERSION}-Lin-x86_64.sh.zip"
+            if [ -f "$CACHE_FILE" ]; then
+              echo "Using licensed STM32CubeCLT installer from runner cache"
+              unzip -t "$CACHE_FILE" >/dev/null
+              cp "$CACHE_FILE" cubeclt_download/
+              exit 0
+            fi
+            echo "Cache miss for STM32CubeCLT $CUBECLT_VERSION"
+          fi
+
           if [ -z "$ST_USERNAME" ] || [ -z "$ST_PASSWORD" ]; then
-            echo "::error::ST_USERNAME and ST_PASSWORD secrets must be set"
+            echo "::error::No cached installer and ST_USERNAME/ST_PASSWORD are missing."
             exit 1
           fi
-          mkdir -p cubeclt_download
           node .github/scripts/download-cubeclt.js
 
       - name: Upload installer artifact

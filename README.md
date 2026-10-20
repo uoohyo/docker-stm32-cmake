@@ -99,6 +99,19 @@ For local builds, you need to download the installer manually:
        # Place your downloaded .zip file in cubeclt_download/
        docker build --build-arg CUBECLT_VERSION="1.16.0" -t stm32-cmake:local .
 
+## Building a New STM32CubeCLT Version in CI
+
+For versions whose ST download page no longer exposes a stable browser authentication flow (currently 1.22.0), download the Linux x86_64 ZIP **through ST's official site with an authorized account** and cache it on your trusted self-hosted GitHub Actions runner.
+
+1. In repository **Settings → Secrets and variables → Actions → Variables**, set `CUBECLT_INSTALLER_CACHE_DIR` to an absolute directory on the self-hosted runner, for example `/srv/st-installers`. This directory must be accessible to the runner user.
+2. Place the official file at `/srv/st-installers/1.22.0/stm32cubeclt_1.22.0-Lin-x86_64.sh.zip` (replace the root and version as needed).
+3. Confirm that `unzip -t /srv/st-installers/1.22.0/stm32cubeclt_1.22.0-Lin-x86_64.sh.zip` succeeds.
+4. Manually run **Build All STM32CubeCLT Versions** from GitHub Actions. Use `versions` for the desired version if needed. The installer is copied from the trusted cache, and then the existing Docker build and tests run.
+
+The cache file is not committed to Git. During the build, the existing workflow uploads the installer as a short-lived GitHub Actions artifact for the Docker build job, so check who can access Actions artifacts and whether this transfer is permitted by the ST license. **Review the ST license and redistribution terms before publishing binaries or Docker images.** The automatic ST account downloader remains a fallback if the cache is unavailable, but access may fail when ST changes its web authentication process.
+
+To re-enable the weekly automatic build trigger, set the repository variable `ST_AUTO_BUILD_NEW_VERSIONS=true` after a complete end-to-end test. Until then, the weekly version-check workflow reports new versions without starting repeated failing builds.
+
 ## Included Tools
 
 | Component               | Description                                    |
