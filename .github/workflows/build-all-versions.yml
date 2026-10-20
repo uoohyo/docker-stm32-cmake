@@ -7,7 +7,6 @@ on:
       - 'Dockerfile'
       - 'entrypoint.sh'
       - '.github/scripts/**'
-      - '.github/workflows/build-all-versions.yml'
   workflow_dispatch:
     inputs:
       versions:
