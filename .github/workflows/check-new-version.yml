@@ -157,7 +157,7 @@ jobs:
             const count = missingVersions.length;
 
             const versionList = missingVersions.map(v => `- ${v.version}`).join('\n');
-            const title = `New STM32CubeCLT versions detected: ${count} version(s)`;
+            const title = `New STM32CubeCLT versions: ${missingVersions.map(v => v.version).join(', ')}`;
             const existing = await github.paginate(github.rest.issues.listForRepo, {
               owner: context.repo.owner, repo: context.repo.repo,
               state: 'open', labels: 'new-version', per_page: 100
