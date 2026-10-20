@@ -108,7 +108,7 @@ For versions whose ST download page no longer exposes a stable browser authentic
 3. Confirm that `unzip -t /srv/st-installers/1.22.0/stm32cubeclt_1.22.0-Lin-x86_64.sh.zip` succeeds.
 4. Manually run **Build All STM32CubeCLT Versions** from GitHub Actions. Use `versions` for the desired version if needed. The installer is copied from the trusted cache, and then the existing Docker build and tests run.
 
-The cached file is not committed or uploaded to a public artifact store by the download mechanism. **Review the ST license and redistribution terms before publishing binaries or Docker images.** The automatic ST account downloader remains a fallback if the cache is unavailable, but access may fail when ST changes its web authentication process.
+The cache file is not committed to Git. During the build, the existing workflow uploads the installer as a short-lived GitHub Actions artifact for the Docker build job, so check who can access Actions artifacts and whether this transfer is permitted by the ST license. **Review the ST license and redistribution terms before publishing binaries or Docker images.** The automatic ST account downloader remains a fallback if the cache is unavailable, but access may fail when ST changes its web authentication process.
 
 To re-enable the weekly automatic build trigger, set the repository variable `ST_AUTO_BUILD_NEW_VERSIONS=true` after a complete end-to-end test. Until then, the weekly version-check workflow reports new versions without starting repeated failing builds.
 
