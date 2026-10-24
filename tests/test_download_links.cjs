@@ -111,3 +111,20 @@ test('form submission overrides cannot redirect credentials or use GET', () => {
   assert.ok(isTrustedNavigationUrl(page));
   for (const url of ['https://evil.example/', 'http://my.st.com/', 'https://my.st.com:8443/', 'https://secret@my.st.com/']) assert.equal(isTrustedNavigationUrl(url), false);
 });
+
+test('credential guard diagnostic identifies form and navigation failures without values', () => {
+  const { credentialGuardDiagnostic } = require('../.github/scripts/st-download-links');
+  const page = `https://my.st.com/cas/login?service=${encodeURIComponent('https://my.st.com/private-secret')}`;
+  const form = { sameForm: true, usernamePresent: true, passwordPresent: true, method: 'post', action: '/cas/login;jsessionid=secret', submitters: [] };
+  const clean = credentialGuardDiagnostic(form, page, login('www.st.com'), version, true);
+  assert.equal(clean.runtimePageValid, true);
+  assert.equal(clean.formActionValid, true);
+  assert.equal(clean.postMethod, true);
+  assert.equal(clean.trustedNavigation, true);
+  assert.ok(!JSON.stringify(clean).includes('secret'));
+  const bad = credentialGuardDiagnostic({ ...form, sameForm: false, passwordPresent: false, method: 'get', submitters: [{ action: 'https://evil.example/secret', method: 'get' }] }, page, login('www.st.com'), version, false);
+  for (const field of ['sameForm', 'passwordPresent', 'postMethod', 'trustedNavigation', 'submitterMethodsValid', 'submitterActionsValid']) assert.equal(bad[field], false);
+  assert.equal(bad.submitterCount, 1);
+  assert.ok(!JSON.stringify(bad).includes('secret'));
+  assert.ok(Object.values(bad).every(value => typeof value === 'boolean' || typeof value === 'number'));
+});

@@ -65,6 +65,24 @@ function validateCredentialForm(form, pageUrl, initialLoginUrl, version) {
     Array.isArray(form.submitters) && form.submitters.every(validTarget));
 }
 
+// Diagnostic values are fixed labels, booleans, and counts only: never DOM text or URLs.
+function credentialGuardDiagnostic(form, pageUrl, initialLoginUrl, version, trustedNavigation) {
+  const submitters = Array.isArray(form.submitters) ? form.submitters : [];
+  return {
+    trustedNavigation: Boolean(trustedNavigation),
+    runtimePageValid: Boolean(validateRuntimeCasUrl(pageUrl, initialLoginUrl, version)),
+    sameForm: Boolean(form.sameForm),
+    usernamePresent: Boolean(form.usernamePresent),
+    passwordPresent: Boolean(form.passwordPresent),
+    postMethod: form.method?.toLowerCase() === 'post',
+    formActionValid: validateCredentialFormAction(form.action, pageUrl, initialLoginUrl, version),
+    submittersKnown: Array.isArray(form.submitters),
+    submitterCount: submitters.length,
+    submitterMethodsValid: submitters.every(target => target.method?.toLowerCase() === 'post'),
+    submitterActionsValid: submitters.every(target => validateCredentialFormAction(target.action, pageUrl, initialLoginUrl, version)),
+  };
+}
+
 function loginUrlRejectionReason(value, version) {
   try {
     const url = new URL(value);
@@ -124,4 +142,4 @@ function parseVersionInfo(html, version) {
   return { downloadUrl: `https://www.st.com${target}`, casLoginUrl: candidates[0] };
 }
 
-module.exports = { validateLoginUrl, parseVersionInfo, sanitizedLocation, authenticationRedirectError, loginUrlRejectionReason, serviceOriginDiagnostic, validateRuntimeCasUrl, validateCredentialFormAction, validateCredentialForm, isTrustedNavigationUrl };
+module.exports = { validateLoginUrl, parseVersionInfo, sanitizedLocation, authenticationRedirectError, loginUrlRejectionReason, serviceOriginDiagnostic, validateRuntimeCasUrl, validateCredentialFormAction, validateCredentialForm, isTrustedNavigationUrl, credentialGuardDiagnostic };
