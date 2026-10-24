@@ -59,3 +59,55 @@ test('CAS diagnostics redact matrix sessions and arbitrary path secrets', () => 
   assert.match(error.message, /"userinfoPresent":true/);
   assert.equal(error.nonRetryable, true);
 });
+
+test('runtime CAS supports only the observed official intermediate service', () => {
+  const { validateRuntimeCasUrl } = require('../.github/scripts/st-download-links');
+  const runtime = service => `https://my.st.com/cas/login?service=${encodeURIComponent(service)}`;
+  const initial = login('www.st.com');
+  const official = runtime('https://my.st.com/fixture-sso-service');
+  assert.ok(validateRuntimeCasUrl(official, initial, version));
+  assert.equal(validateLoginUrl(official, version), null, 'discovery must remain version-bound');
+  assert.equal(validateRuntimeCasUrl(official, initial, '1.21.0'), null);
+  assert.equal(validateRuntimeCasUrl(official, 'https://evil.example/cas/login', version), null);
+  for (const service of ['http://my.st.com/sso', 'https://evil.example/sso', 'https://my.st.com.evil.example/sso', 'https://my.st.com:8443/sso', 'https://user:secret@my.st.com/sso', 'https://www.st.com/arbitrary']) {
+    assert.equal(validateRuntimeCasUrl(runtime(service), initial, version), null, service);
+  }
+  for (const url of ['https://evil.example/cas/login', 'https://my.st.com/account', 'http://my.st.com/cas/login', 'https://my.st.com:8443/cas/login', 'https://user:secret@my.st.com/cas/login']) {
+    assert.equal(validateRuntimeCasUrl(url, initial, version), null, url);
+  }
+});
+
+test('credential form action must stay on the current approved CAS origin and route', () => {
+  const { validateCredentialFormAction } = require('../.github/scripts/st-download-links');
+  const initial = login('www.st.com');
+  const page = `https://my.st.com/cas/login?service=${encodeURIComponent('https://my.st.com/fixture-sso-service')}`;
+  for (const action of ['/cas/login', '/cas/login;jsessionid=SYNTHETIC_ONLY']) {
+    assert.ok(validateCredentialFormAction(action, page, initial, version));
+  }
+  for (const action of ['https://evil.example/cas/login', 'https://www.st.com/cas/login', 'http://my.st.com/cas/login', 'https://user:secret@my.st.com/cas/login', '/other', '/cas/login;evil=secret', '/cas/login;jsessionid=secret/other', '/cas/login?service=https://evil.example/sso']) {
+    assert.equal(validateCredentialFormAction(action, page, initial, version), false, action);
+  }
+});
+
+test('downloader checks trust before username, password, and submission', () => {
+  const fs = require('node:fs');
+  const source = fs.readFileSync(require('node:path').join(__dirname, '../.github/scripts/download-cubeclt.js'), 'utf8');
+  assert.equal((source.match(/await requireTrustedCredentialPage\(\);/g) || []).length, 3);
+  assert.ok(source.includes("page.on('framenavigated'"));
+  assert.ok(source.includes('first === second'));
+});
+
+test('form submission overrides cannot redirect credentials or use GET', () => {
+  const { validateCredentialForm, isTrustedNavigationUrl } = require('../.github/scripts/st-download-links');
+  const initial = login('www.st.com');
+  const page = 'https://my.st.com/cas/login';
+  const form = { sameForm: true, action: page, method: 'post', submitters: [] };
+  assert.ok(validateCredentialForm(form, page, initial, version));
+  for (const override of [{ action: 'https://evil.example/cas/login', method: 'post' }, { action: page, method: 'get' }]) {
+    assert.equal(validateCredentialForm({ ...form, submitters: [override] }, page, initial, version), false);
+  }
+  assert.equal(validateCredentialForm({ ...form, method: 'get' }, page, initial, version), false);
+  assert.equal(validateCredentialForm({ ...form, sameForm: false }, page, initial, version), false);
+  assert.ok(isTrustedNavigationUrl(page));
+  for (const url of ['https://evil.example/', 'http://my.st.com/', 'https://my.st.com:8443/', 'https://secret@my.st.com/']) assert.equal(isTrustedNavigationUrl(url), false);
+});

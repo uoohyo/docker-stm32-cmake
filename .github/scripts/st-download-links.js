@@ -22,6 +22,49 @@ function validateLoginUrl(value, version, allowMissingService = false) {
   }
 }
 
+// Runtime CAS may wrap the original product service in ST's own SSO service.
+// This exception is intentionally unavailable to discovery links.
+function validateRuntimeCasUrl(value, initialLoginUrl, version) {
+  if (!validateLoginUrl(initialLoginUrl, version)) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || !LOGIN_HOSTS.has(url.hostname) ||
+        url.port || url.username || url.password || url.pathname !== '/cas/login') return null;
+    if (validateLoginUrl(url.href, version, true)) return url.href;
+    const service = new URL(url.searchParams.get('service'));
+    if (service.protocol === 'https:' && service.hostname === 'my.st.com' &&
+        !service.port && !service.username && !service.password) return url.href;
+    return null;
+  } catch { return null; }
+}
+
+function validateCredentialFormAction(action, pageUrl, initialLoginUrl, version) {
+  if (!validateRuntimeCasUrl(pageUrl, initialLoginUrl, version)) return false;
+  try {
+    const page = new URL(pageUrl);
+    const form = new URL(action, page);
+    if (form.origin !== page.origin || form.username || form.password) return false;
+    // Servlet session rewriting appends exactly this path parameter to CAS.
+    if (!/^\/cas\/login(?:;jsessionid=[A-Za-z0-9._-]+)?$/.test(form.pathname)) return false;
+    form.pathname = '/cas/login';
+    return Boolean(validateRuntimeCasUrl(form.href, initialLoginUrl, version));
+  } catch { return false; }
+}
+
+function isTrustedNavigationUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && LOGIN_HOSTS.has(url.hostname) && !url.port && !url.username && !url.password;
+  } catch { return false; }
+}
+
+function validateCredentialForm(form, pageUrl, initialLoginUrl, version) {
+  const validTarget = target => target.method?.toLowerCase() === 'post' &&
+    validateCredentialFormAction(target.action, pageUrl, initialLoginUrl, version);
+  return Boolean(form.sameForm && validTarget(form) &&
+    Array.isArray(form.submitters) && form.submitters.every(validTarget));
+}
+
 function loginUrlRejectionReason(value, version) {
   try {
     const url = new URL(value);
@@ -81,4 +124,4 @@ function parseVersionInfo(html, version) {
   return { downloadUrl: `https://www.st.com${target}`, casLoginUrl: candidates[0] };
 }
 
-module.exports = { validateLoginUrl, parseVersionInfo, sanitizedLocation, authenticationRedirectError, loginUrlRejectionReason, serviceOriginDiagnostic };
+module.exports = { validateLoginUrl, parseVersionInfo, sanitizedLocation, authenticationRedirectError, loginUrlRejectionReason, serviceOriginDiagnostic, validateRuntimeCasUrl, validateCredentialFormAction, validateCredentialForm, isTrustedNavigationUrl };

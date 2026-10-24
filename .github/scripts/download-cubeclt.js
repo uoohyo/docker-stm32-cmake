@@ -24,7 +24,7 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
-const { parseVersionInfo, validateLoginUrl, authenticationRedirectError, sanitizedLocation } = require('./st-download-links');
+const { parseVersionInfo, validateLoginUrl, authenticationRedirectError, sanitizedLocation, validateRuntimeCasUrl, validateCredentialForm, isTrustedNavigationUrl } = require('./st-download-links');
 
 const VERSION    = process.env.CUBECLT_VERSION;
 const USERNAME   = process.env.ST_USERNAME;
@@ -72,9 +72,22 @@ async function getVersionInfo(version) {
 // Step 2 + 3: authenticate via CAS, then download the file
 // ---------------------------------------------------------------------------
 async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
+  if (!validateLoginUrl(casLoginUrl, VERSION)) throw new Error('Invalid version-bound ST authentication entry point');
   const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
+    let trustedNavigation = true;
+    page.on('framenavigated', frame => {
+      if (frame !== page.mainFrame() || frame.url() === 'about:blank') return;
+      try {
+        if (!isTrustedNavigationUrl(frame.url())) trustedNavigation = false;
+      } catch { trustedNavigation = false; }
+    });
+    page.on('response', response => {
+      const request = response.request();
+      if (!request.isNavigationRequest() || request.frame() !== page.mainFrame()) return;
+      if (![...request.redirectChain(), request].every(item => isTrustedNavigationUrl(item.url()))) trustedNavigation = false;
+    });
     // Hide headless Chrome indicators
     await page.evaluateOnNewDocument(() => {
       Object.defineProperty(navigator, 'webdriver', { get: () => false });
@@ -103,13 +116,28 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
     });
 
     // Credentials are entered only on a validated official CAS route.
-    const isCasPage = () => Boolean(validateLoginUrl(page.url(), VERSION, true));
+    const isCasPage = () => trustedNavigation && Boolean(validateRuntimeCasUrl(page.url(), casLoginUrl, VERSION));
     const requireTrustedCredentialPage = async () => {
-      if (isCasPage()) return;
-      const formAction = await page.evaluate(() =>
-        document.querySelector('input[name="username"]')?.closest('form')?.action || ''
-      ).catch(() => '');
-      throw authenticationRedirectError(page.url(), formAction, VERSION);
+      const forms = await page.evaluate(() => {
+        const username = document.querySelector('input[name="username"]');
+        const password = document.querySelector('input[name="password"]');
+        const first = username?.closest('form');
+        const second = password?.closest('form');
+        const submitters = first ? [...first.elements].filter(control => !control.disabled &&
+          ((control.tagName === 'BUTTON' && control.type === 'submit') ||
+           (control.tagName === 'INPUT' && ['submit', 'image'].includes(control.type)))) : [];
+        return {
+          action: first?.action || '', method: first?.method || '',
+          sameForm: Boolean(first && first === second),
+          submitters: submitters.map(control => ({
+            action: control.hasAttribute('formaction') ? control.formAction : first.action,
+            method: control.hasAttribute('formmethod') ? control.formMethod : first.method,
+          })),
+        };
+      }).catch(() => ({ action: '', sameForm: false }));
+      if (!isCasPage() || !validateCredentialForm(forms, page.url(), casLoginUrl, VERSION)) {
+        throw authenticationRedirectError(page.url(), forms.action, VERSION);
+      }
     };
 
     // First try the version-specific CAS URL when provided, otherwise
@@ -149,6 +177,7 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
       await page.type('input[name="username"]', USERNAME, { delay: 50 });
       await requireTrustedCredentialPage();
       await page.type('input[name="password"]', PASSWORD, { delay: 50 });
+      await requireTrustedCredentialPage();
       await Promise.all([
         page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 90000 }),
         page.keyboard.press('Enter'),
