@@ -22,6 +22,38 @@ function validateLoginUrl(value, version, allowMissingService = false) {
   }
 }
 
+function loginUrlRejectionReason(value, version) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:') return 'protocol';
+    if (!LOGIN_HOSTS.has(url.hostname)) return 'host';
+    if (url.port || url.username || url.password) return 'authority';
+    if (url.pathname !== '/cas/login') return 'path';
+    const serviceValue = url.searchParams.get('service');
+    if (!serviceValue) return 'none';
+    let service;
+    try { service = new URL(serviceValue); } catch { return 'service_url'; }
+    if (service.protocol !== 'https:' || service.hostname !== 'www.st.com' || service.port || service.username || service.password) return 'service_origin';
+    if (!service.pathname.startsWith('/en/development-tools/stm32cubeclt.') || !service.pathname.endsWith('.html')) return 'service_path';
+    if (version && !service.pathname.includes(`.product=STM32CubeCLT-Lnx.version=${version}.html`)) return 'product_version';
+    return 'none';
+  } catch { return 'invalid_url'; }
+}
+
+// Never include query strings, fragments, userinfo, or form field values in diagnostics.
+function sanitizedLocation(value) {
+  try {
+    const url = new URL(value);
+    return `${url.origin}${url.pathname}`;
+  } catch { return 'invalid-url'; }
+}
+
+function authenticationRedirectError(location, formAction, version) {
+  const error = new Error(`Untrusted authentication redirect; reason=${loginUrlRejectionReason(location, version)}; page=${sanitizedLocation(location)}; form=${sanitizedLocation(formAction)}`);
+  error.nonRetryable = true;
+  return error;
+}
+
 function parseVersionInfo(html, version) {
   if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Invalid STM32CubeCLT version');
   const downloadPaths = [...html.matchAll(/data-download-path=(["'])(.*?)\1/gi)];
@@ -39,4 +71,4 @@ function parseVersionInfo(html, version) {
   return { downloadUrl: `https://www.st.com${target}`, casLoginUrl: candidates[0] };
 }
 
-module.exports = { validateLoginUrl, parseVersionInfo };
+module.exports = { validateLoginUrl, parseVersionInfo, sanitizedLocation, authenticationRedirectError, loginUrlRejectionReason };

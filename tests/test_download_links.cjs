@@ -32,3 +32,17 @@ test('chooses the exact Linux version instead of a nearest unrelated CAS row', (
   const other = login('my.st.com').replace('1.22.0', '1.21.0');
   assert.equal(parseVersionInfo(html(other) + html(login('www.st.com')), version).casLoginUrl, login('www.st.com'));
 });
+
+
+test('untrusted redirect diagnostics omit secrets and are not retried', () => {
+  const { authenticationRedirectError, loginUrlRejectionReason } = require('../.github/scripts/st-download-links');
+  const error = authenticationRedirectError('https://user:secret@my.st.com/changed?token=secret#secret', 'https://my.st.com/submit?token=secret', version);
+  assert.equal(error.nonRetryable, true);
+  assert.match(error.message, /reason=authority/);
+  assert.match(error.message, /page=https:\/\/my.st.com\/changed/);
+  assert.ok(!error.message.includes('secret'));
+  assert.equal(loginUrlRejectionReason('https://my.st.com/cas/login', version), 'none');
+  assert.equal(loginUrlRejectionReason('https://my.st.com/changed', version), 'path');
+  assert.equal(loginUrlRejectionReason('https://evil.example/cas/login', version), 'host');
+  assert.equal(loginUrlRejectionReason(login('www.st.com'), '1.21.0'), 'product_version');
+});
