@@ -24,7 +24,7 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
-const { parseVersionInfo, validateLoginUrl, authenticationRedirectError, sanitizedLocation, validateRuntimeCasUrl, validateCredentialForm, isTrustedNavigationUrl, credentialGuardDiagnostic, navigationOriginDiagnostic } = require('./st-download-links');
+const { parseVersionInfo, validateLoginUrl, authenticationRedirectError, sanitizedLocation, validateRuntimeCasUrl, validateCredentialForm, isTrustedNavigationUrl, credentialGuardDiagnostic, navigationOriginDiagnostic, pageRouteDiagnostic, responseDiagnostic } = require('./st-download-links');
 
 const VERSION    = process.env.CUBECLT_VERSION;
 const USERNAME   = process.env.ST_USERNAME;
@@ -185,12 +185,12 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
       await requireTrustedCredentialPage();
       await page.type('input[name="password"]', PASSWORD, { delay: 50 });
       await requireTrustedCredentialPage();
-      await Promise.all([
+      const [submissionResponse] = await Promise.all([
         page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 90000 }),
         page.keyboard.press('Enter'),
       ]);
-      if (isCasPage()) throw new Error('ST login failed — still on CAS page');
-      console.error('  Login navigation succeeded');
+      console.error(`  Login submission navigation: ${JSON.stringify(responseDiagnostic(submissionResponse?.status(), submissionResponse?.headers() || {}, page.url()))}`);
+      console.error('  Login form submitted; navigation completed (authentication not yet verified)');
     }
 
     // In some ST flows the authenticated redirect begins a file download.
@@ -199,13 +199,38 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
       await new Promise(resolve => setTimeout(resolve, 1500));
     }
     if (!suggestedFilename && !downloadFailed) {
+      const postSubmitSignals = await page.evaluate(() => {
+        const visible = document.body?.innerText?.toLowerCase() || '';
+        return {
+          usernameInput: !!document.querySelector('input[name="username"]'),
+          passwordInput: !!document.querySelector('input[type="password"]'),
+          license: /license agreement|i accept/.test(visible),
+          challenge: /verification code|two.factor|one.time password|captcha/.test(visible),
+        };
+      }).catch(() => ({ unavailable: true }));
+      console.error(`  Before download request: ${JSON.stringify({ ...pageRouteDiagnostic(page.url()), trustedNavigation, signals: postSubmitSignals })}`);
+      if (!trustedNavigation || pageRouteDiagnostic(page.url()).routeClass === 'cas-login' ||
+          (postSubmitSignals.usernameInput && postSubmitSignals.passwordInput) || postSubmitSignals.license || postSubmitSignals.challenge) {
+        const error = new Error('ST authentication/consent interaction is still present; no automatic retry or consent submission');
+        error.nonRetryable = true;
+        throw error;
+      }
       console.error('Requesting STM32CubeCLT download...');
-      await page.goto(downloadUrl, {
+      const downloadResponse = await page.goto(downloadUrl, {
         waitUntil: 'domcontentloaded',
         timeout: 30000,
       }).catch(error => {
         console.error(`  Download navigation interrupted (${error.name}); waiting for download signals`);
       });
+      if (downloadResponse) {
+        const diagnostic = responseDiagnostic(downloadResponse.status(), downloadResponse.headers(), page.url());
+        console.error(`  Download response: ${JSON.stringify(diagnostic)}`);
+        if ([401, 403].includes(diagnostic.status)) {
+          const error = new Error(`ST download request rejected with HTTP ${diagnostic.status}; authentication is not verified`);
+          error.nonRetryable = true;
+          throw error;
+        }
+      }
     }
 
     // Do not hold the self-hosted runner for the full transfer timeout when
