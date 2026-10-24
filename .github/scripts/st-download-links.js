@@ -93,6 +93,12 @@ function responseDiagnostic(status, headers, location) {
   };
 }
 
+function postSubmissionBlocked(location, trustedNavigation, signals) {
+  // Footer/legal/challenge mentions are not proof of a pending interaction.
+  return !trustedNavigation || pageRouteDiagnostic(location).routeClass === 'cas-login' ||
+    Boolean(signals.usernameInput && signals.passwordInput);
+}
+
 function validateCredentialForm(form, pageUrl, initialLoginUrl, version) {
   const validTarget = target => target.method?.toLowerCase() === 'post' &&
     validateCredentialFormAction(target.action, pageUrl, initialLoginUrl, version);
@@ -177,4 +183,4 @@ function parseVersionInfo(html, version) {
   return { downloadUrl: `https://www.st.com${target}`, casLoginUrl: candidates[0] };
 }
 
-module.exports = { validateLoginUrl, parseVersionInfo, sanitizedLocation, authenticationRedirectError, loginUrlRejectionReason, serviceOriginDiagnostic, validateRuntimeCasUrl, validateCredentialFormAction, validateCredentialForm, isTrustedNavigationUrl, credentialGuardDiagnostic, navigationOriginDiagnostic, pageRouteDiagnostic, responseDiagnostic };
+module.exports = { validateLoginUrl, parseVersionInfo, sanitizedLocation, authenticationRedirectError, loginUrlRejectionReason, serviceOriginDiagnostic, validateRuntimeCasUrl, validateCredentialFormAction, validateCredentialForm, isTrustedNavigationUrl, credentialGuardDiagnostic, navigationOriginDiagnostic, pageRouteDiagnostic, responseDiagnostic, postSubmissionBlocked };

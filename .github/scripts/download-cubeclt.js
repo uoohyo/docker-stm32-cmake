@@ -24,7 +24,7 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
-const { parseVersionInfo, validateLoginUrl, authenticationRedirectError, sanitizedLocation, validateRuntimeCasUrl, validateCredentialForm, isTrustedNavigationUrl, credentialGuardDiagnostic, navigationOriginDiagnostic, pageRouteDiagnostic, responseDiagnostic } = require('./st-download-links');
+const { parseVersionInfo, validateLoginUrl, authenticationRedirectError, sanitizedLocation, validateRuntimeCasUrl, validateCredentialForm, isTrustedNavigationUrl, credentialGuardDiagnostic, navigationOriginDiagnostic, pageRouteDiagnostic, responseDiagnostic, postSubmissionBlocked } = require('./st-download-links');
 
 const VERSION    = process.env.CUBECLT_VERSION;
 const USERNAME   = process.env.ST_USERNAME;
@@ -209,9 +209,8 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
         };
       }).catch(() => ({ unavailable: true }));
       console.error(`  Before download request: ${JSON.stringify({ ...pageRouteDiagnostic(page.url()), trustedNavigation, signals: postSubmitSignals })}`);
-      if (!trustedNavigation || pageRouteDiagnostic(page.url()).routeClass === 'cas-login' ||
-          (postSubmitSignals.usernameInput && postSubmitSignals.passwordInput) || postSubmitSignals.license || postSubmitSignals.challenge) {
-        const error = new Error('ST authentication/consent interaction is still present; no automatic retry or consent submission');
+      if (postSubmissionBlocked(page.url(), trustedNavigation, postSubmitSignals)) {
+        const error = new Error('ST navigation or login form is not ready for download; no automatic retry');
         error.nonRetryable = true;
         throw error;
       }

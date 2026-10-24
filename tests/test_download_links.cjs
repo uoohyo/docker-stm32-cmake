@@ -171,15 +171,25 @@ test('response diagnostics classify canonical routes without values or header fi
 });
 
 
-test('downloader fails closed on consent/challenge and HTTP authorization rejection', () => {
+test('downloader fails closed on login forms and HTTP authorization rejection', () => {
   const fs = require('node:fs');
   const source = fs.readFileSync(require('node:path').join(__dirname, '../.github/scripts/download-cubeclt.js'), 'utf8');
-  assert.ok(source.includes("pageRouteDiagnostic(page.url()).routeClass === 'cas-login'"));
-  assert.ok(source.includes('postSubmitSignals.license || postSubmitSignals.challenge'));
+  assert.ok(source.includes('postSubmissionBlocked(page.url(), trustedNavigation, postSubmitSignals)'));
+  assert.ok(!source.includes('postSubmitSignals.license || postSubmitSignals.challenge'));
   assert.ok(source.includes('[401, 403].includes(diagnostic.status)'));
   assert.ok(source.includes('authentication not yet verified'));
   assert.ok(!source.includes('Login navigation succeeded'));
   assert.ok(!source.includes('Download started: ${suggestedFilename}'));
   assert.ok(!source.includes('Download URL: ${info.downloadUrl}'));
   assert.ok(source.includes('responseDiagnostic(authResponse.status()'));
+});
+
+
+test('footer license or CAPTCHA mentions are diagnostic only, not pending interaction proof', () => {
+  const { postSubmissionBlocked } = require('../.github/scripts/st-download-links');
+  const footer = { license: true, challenge: true, usernameInput: false, passwordInput: false };
+  assert.equal(postSubmissionBlocked('https://www.st.com/product', true, footer), false);
+  assert.equal(postSubmissionBlocked('https://www.st.com/product', false, footer), true);
+  assert.equal(postSubmissionBlocked('https://my.st.com/cas/login;jsessionid=secret', true, footer), true);
+  assert.equal(postSubmissionBlocked('https://www.st.com/product', true, { ...footer, usernameInput: true, passwordInput: true }), true);
 });
