@@ -27,6 +27,8 @@ test('CommonJS, navigation, form input, and CDP downloads remain compatible', { 
   try {
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
     browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] });
+    const expectedVersion = require('../.github/scripts/node_modules/puppeteer-core/lib/puppeteer/revisions.js').PUPPETEER_REVISIONS.chrome;
+    assert.equal((await browser.version()).split('/').at(-1), expectedVersion);
     const page = await browser.newPage();
     const origin = `http://127.0.0.1:${server.address().port}`;
     await page.setRequestInterception(true);

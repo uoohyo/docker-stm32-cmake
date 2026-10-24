@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '.github/scripts/package*.json'
+      - '.github/scripts/install-browser.sh'
       - '.github/scripts/*cubeclt*.js'
       - 'tests/test_browser_compatibility.cjs'
       - '.github/workflows/validate-browser-dependencies.yml'
@@ -11,6 +12,7 @@ on:
     branches: [main]
     paths:
       - '.github/scripts/package*.json'
+      - '.github/scripts/install-browser.sh'
       - 'tests/test_browser_compatibility.cjs'
       - '.github/workflows/validate-browser-dependencies.yml'
 
@@ -19,21 +21,24 @@ permissions:
 
 jobs:
   compatibility:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    env:
+      PUPPETEER_CACHE_DIR: ${{ runner.temp }}/puppeteer-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         node: ['22', '24']
+        os: [ubuntu-latest, macos-14]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
       - name: Install the locked browser dependencies
-        env:
-          PUPPETEER_SKIP_CHROME_HEADLESS_SHELL_DOWNLOAD: 'true'
-        run: npm ci --prefix .github/scripts
+        run: |
+          test ! -e "$PUPPETEER_CACHE_DIR"
+          bash .github/scripts/install-browser.sh
       - name: Audit runtime dependencies
         run: npm audit --prefix .github/scripts --omit=dev --audit-level=high
       - name: Test browser APIs without ST credentials or vendor downloads

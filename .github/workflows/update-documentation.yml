@@ -11,6 +11,8 @@ env:
 
 jobs:
   update-versions:
+    env:
+      PUPPETEER_CACHE_DIR: ${{ runner.temp }}/puppeteer-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index }}
     runs-on: ubuntu-latest
     if: >-
       ${{ github.event_name == 'workflow_dispatch' ||
@@ -30,7 +32,7 @@ jobs:
           node-version: '22'
 
       - name: Install scraper dependencies
-        run: npm ci --prefix .github/scripts
+        run: bash .github/scripts/install-browser.sh
 
       - name: Scrape all STM32CubeCLT versions from ST
         id: scrape

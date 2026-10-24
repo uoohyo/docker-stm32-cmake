@@ -53,3 +53,9 @@ Official compatibility references: [Puppeteer system requirements](https://pptr.
 - The loopback-only fixture checks CommonJS loading, browser launch, user agent/headers, document initialization, navigation/response handling, form entry, selectors, and CDP download events plus downloaded bytes. It uses no ST credentials, vendor requests, or proprietary installer. The new browser-dependency workflow repeats the fixture and audit on relevant changes.
 - [Reliability CI](https://github.com/uoohyo/docker-stm32-cmake/actions/runs/40119595403) covers version parsing and download-link safety regression tests. Local Python (23 tests) and ST-link Node (5 tests) suites also passed.
 - These checks establish dependency/API compatibility, not successful live ST authentication. Live ST scraping, authenticated download, and installer execution remain a separate authorized canary; this audit does not claim they passed.
+
+## Production provisioning follow-up
+
+The paired self-hosted macOS canary [40120532211](https://github.com/uoohyo/docker-stm32-cmake/actions/runs/40120532211) subsequently failed before ST contact: neither 1.21.0 nor 1.11.1 could find the expected Chrome 156.0.8078.47. `npm ci` and the zero-warning audit had succeeded. Puppeteer's package postinstall is best-effort, so successful npm installation alone is insufficient evidence that Chrome exists; the logs do not establish whether local npm configuration or a suppressed installer failure caused this instance.
+
+The follow-up explicitly invokes the CLI from the locked local package, provisions Chrome into a job-local runner temporary cache, and checks its executable before credentials are used. Both installation and later launch receive the same cache environment. Fresh-cache browser CI now includes Linux and macOS and verifies the launched browser revision. Issue #48 remains open until the actual paired self-hosted canary confirms browser launch; this is separate from ST login success.
