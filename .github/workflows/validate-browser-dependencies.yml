@@ -1,0 +1,40 @@
+name: Validate browser dependencies
+
+on:
+  pull_request:
+    paths:
+      - '.github/scripts/package*.json'
+      - '.github/scripts/*cubeclt*.js'
+      - 'tests/test_browser_compatibility.cjs'
+      - '.github/workflows/validate-browser-dependencies.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/scripts/package*.json'
+      - 'tests/test_browser_compatibility.cjs'
+      - '.github/workflows/validate-browser-dependencies.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install the locked browser dependencies
+        env:
+          PUPPETEER_SKIP_CHROME_HEADLESS_SHELL_DOWNLOAD: 'true'
+        run: npm ci --prefix .github/scripts
+      - name: Audit runtime dependencies
+        run: npm audit --prefix .github/scripts --omit=dev --audit-level=high
+      - name: Test browser APIs without ST credentials or vendor downloads
+        run: node --test tests/test_browser_compatibility.cjs
