@@ -2,12 +2,15 @@
 
 This page lists all available STM32CubeCLT versions and their Docker image availability.
 
-**Last updated:** 2026-05-14 09:03:03 UTC
+**Registry availability snapshot:** 2026-05-14 09:03:03 UTC
+
+**Discovery review:** 2026-10-24 UTC. Version 1.22.0 was detected by the [version check](https://github.com/uoohyo/docker-stm32-cmake/actions/runs/39409048106), but its [latest build](https://github.com/uoohyo/docker-stm32-cmake/actions/runs/39362568355) did not reach image publication. Existing availability rows retain the registry snapshot above; this edit does not claim a fresh registry or pull verification.
 
 <!-- VERSION_TABLE_START -->
 
 | Version | Status | ST Download | Docker Pull |
 | ------- | ------ | ----------- | ----------- |
+| `1.22.0` | ![not built](https://img.shields.io/badge/not%20built-orange?style=flat-square) | [Download](https://www.st.com/en/development-tools/stm32cubeclt.html) | - |
 | `1.21.0` | ![available](https://img.shields.io/badge/available-2496ED?style=flat-square&logo=docker&logoColor=white) | [Download](https://www.st.com/en/development-tools/stm32cubeclt.html) | [`docker pull uoohyo/stm32-cmake:1.21.0`](https://hub.docker.com/r/uoohyo/stm32-cmake/tags?name=1.21.0) |
 | `1.20.0` | ![available](https://img.shields.io/badge/available-2496ED?style=flat-square&logo=docker&logoColor=white) | [Download](https://www.st.com/en/development-tools/stm32cubeclt.html) | [`docker pull uoohyo/stm32-cmake:1.20.0`](https://hub.docker.com/r/uoohyo/stm32-cmake/tags?name=1.20.0) |
 | `1.19.0` | ![available](https://img.shields.io/badge/available-2496ED?style=flat-square&logo=docker&logoColor=white) | [Download](https://www.st.com/en/development-tools/stm32cubeclt.html) | [`docker pull uoohyo/stm32-cmake:1.19.0`](https://hub.docker.com/r/uoohyo/stm32-cmake/tags?name=1.19.0) |

@@ -2,7 +2,7 @@ name: Update Versions Documentation
 
 on:
   workflow_run:
-    workflows: ["Build All STM32CubeCLT Versions"]
+    workflows: ["Build All STM32CubeCLT Versions", "Check for New STM32CubeCLT Version"]
     types: [completed]
   workflow_dispatch:
 
@@ -12,10 +12,12 @@ env:
 jobs:
   update-versions:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          (github.event.workflow_run.head_branch == 'main' &&
+           github.event.workflow_run.head_repository.full_name == github.repository) }}
     permissions:
       contents: write
-      issues: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -46,87 +48,42 @@ jobs:
         run: |
           echo "Fetching versions from Docker Hub..."
 
-          ALL_TAGS=""
-          PAGE=1
-
-          while true; do
-            RESPONSE=$(curl -s "https://hub.docker.com/v2/repositories/uoohyo/stm32-cmake/tags?page=${PAGE}&page_size=100")
-            TAGS=$(echo "$RESPONSE" | jq -r '.results[].name' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$' || echo "")
-
-            if [ -z "$TAGS" ]; then
-              break
+          set -euo pipefail
+          TAGS_FILE=$(mktemp)
+          trap 'rm -f "$TAGS_FILE"' EXIT
+          NEXT_URL="https://hub.docker.com/v2/repositories/uoohyo/stm32-cmake/tags?page_size=100"
+          SEEN_URLS=""
+          while [ -n "$NEXT_URL" ]; do
+            case "$NEXT_URL" in
+              https://hub.docker.com/v2/repositories/uoohyo/stm32-cmake/tags?*) ;;
+              *) echo "::error::Unexpected registry pagination URL"; exit 1 ;;
+            esac
+            if printf '%s\n' "$SEEN_URLS" | grep -Fxq "$NEXT_URL"; then
+              echo "::error::Repeated registry pagination URL"; exit 1
             fi
-
-            ALL_TAGS="${ALL_TAGS}${TAGS}"$'\n'
-
-            NEXT=$(echo "$RESPONSE" | jq -r '.next')
-            if [ "$NEXT" = "null" ]; then
-              break
-            fi
-
-            PAGE=$((PAGE + 1))
+            SEEN_URLS="${SEEN_URLS}"$'\n'"${NEXT_URL}"
+            RESPONSE=$(curl -fsSL --retry 3 --retry-delay 2 "$NEXT_URL")
+            printf '%s' "$RESPONSE" | jq -e '
+              (.results | type == "array") and
+              all(.results[]; .name | type == "string") and
+              has("next") and (.next == null or (.next | type == "string" and length > 0))' > /dev/null
+            printf '%s' "$RESPONSE" | jq -r '.results[].name' >> "$TAGS_FILE"
+            NEXT_URL=$(printf '%s' "$RESPONSE" | jq -r '.next // empty')
           done
-
-          TAGS_JSON=$(echo "$ALL_TAGS" | grep -v '^$' | jq -R . | jq -s . || echo '[]')
-          DELIMITER=$(openssl rand -hex 8)
-          { echo "tags<<${DELIMITER}"; echo "${TAGS_JSON}"; echo "${DELIMITER}"; } >> $GITHUB_OUTPUT
-          echo "Docker Hub tags: $(echo "$TAGS_JSON" | jq '. | length')"
+          TAGS_JSON=$(sort -u "$TAGS_FILE" | jq -R -s -c 'split("\n") | map(select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$")))')
+          echo "tags=${TAGS_JSON}" >> "$GITHUB_OUTPUT"
+          echo "Docker Hub tags: $(printf '%s' "$TAGS_JSON" | jq 'length')"
 
       - name: Generate version tables
         env:
           VERSIONS: ${{ steps.scrape.outputs.versions }}
           DOCKER_TAGS: ${{ steps.fetch-versions.outputs.tags }}
         run: |
-          echo "Generating version tables..."
-
-          # Full table for docs/versions.md — all versions, newest first
-          {
-            echo "| Version | Status | ST Download | Docker Pull |"
-            echo "| ------- | ------ | ----------- | ----------- |"
-
-            echo "$VERSIONS" | jq -r '
-              [.[]]
-              | sort_by([.major, .minor, .patch] | map(tonumber))
-              | reverse[]
-              | "\(.version)\t\(.linux_supported)"
-            ' | while IFS=$'\t' read -r version linux_supported; do
-              ST_LINK="https://www.st.com/en/development-tools/stm32cubeclt.html"
-
-              if echo "$DOCKER_TAGS" | jq -e --arg v "$version" '. | index($v) != null' > /dev/null 2>&1; then
-                STATUS="![available](https://img.shields.io/badge/available-2496ED?style=flat-square&logo=docker&logoColor=white)"
-                DOCKER_LINK="https://hub.docker.com/r/uoohyo/stm32-cmake/tags?name=${version}"
-                DOCKER_PULL="[\`docker pull uoohyo/stm32-cmake:${version}\`](${DOCKER_LINK})"
-              elif [ "$linux_supported" = "true" ]; then
-                STATUS="![not built](https://img.shields.io/badge/not%20built-orange?style=flat-square)"
-                DOCKER_PULL="-"
-              else
-                STATUS="![not supported](https://img.shields.io/badge/not%20supported-gray?style=flat-square)"
-                DOCKER_PULL="-"
-              fi
-
-              echo "| \`${version}\` | ${STATUS} | [Download](${ST_LINK}) | ${DOCKER_PULL} |"
-            done
-          } > /tmp/table-full.md
-
-          # README table — top 6 available (linux_supported: true, on Docker Hub), newest first
-          echo "" > /tmp/table-readme.md
-
-          # Get versions that are on Docker Hub, newest first, limit to 6
-          echo "$VERSIONS" | jq -r --argjson tags "$DOCKER_TAGS" '
-            [.[] | select(.linux_supported == true) | select(.version as $v | $tags | index($v) != null)]
-            | sort_by([.major, .minor, .patch] | map(tonumber))
-            | reverse
-            | limit(6; .[])
-            | .version
-          ' | while read -r version; do
-            # Static badge showing version is available on Docker Hub
-            DOCKER_LINK="https://hub.docker.com/r/uoohyo/stm32-cmake/tags?name=${version}"
-            BADGE="https://img.shields.io/badge/available-2496ED?style=flat-square&logo=docker&logoColor=white"
-            echo "<tr><td>v${version}</td><td><a href=\"${DOCKER_LINK}\"><img src=\"${BADGE}\" alt=\"available\" /></a></td></tr>" >> /tmp/table-readme.md
-          done
-
-          echo "Full table: $(wc -l < /tmp/table-full.md) rows"
-          echo "README table: $(wc -l < /tmp/table-readme.md) rows"
+          set -euo pipefail
+          printf '%s\n' "$VERSIONS" > /tmp/discovered-versions.json
+          printf '%s\n' "$DOCKER_TAGS" > /tmp/registry-tags.json
+          python3 .github/scripts/version-metadata.py render /tmp/discovered-versions.json \
+            --tags /tmp/registry-tags.json --output-dir /tmp
 
       - name: Update versions.md
         run: |
@@ -195,55 +152,3 @@ jobs:
             git push
             echo "Documentation updated successfully"
           fi
-
-      - name: Close building issue
-        if: success()
-        uses: actions/github-script@v9
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const issues = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              labels: 'building'
-            });
-
-            if (issues.data.length === 0) {
-              console.log('No building issues found');
-              return;
-            }
-
-            for (const issue of issues.data) {
-              console.log(`Processing issue #${issue.number}`);
-
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                body: `✅ **Build completed successfully!**\n\nAll versions have been built and pushed to Docker Hub.\n\n- 📦 [Docker Hub Repository](https://hub.docker.com/r/uoohyo/stm32-cmake/tags)\n- 📋 [Version Documentation](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/docs/versions.md)\n- 📝 README has been updated with the latest versions\n\nThis issue is now closed automatically.`
-              });
-
-              await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                labels: ['completed']
-              });
-
-              await github.rest.issues.removeLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                name: 'building'
-              });
-
-              await github.rest.issues.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                state: 'closed'
-              });
-
-              console.log(`Issue #${issue.number} closed successfully`);
-            }

@@ -65,7 +65,8 @@ jobs:
         run: |
           echo "Fetching all versions from ST website..."
           ALL_VERSIONS=$(bash .github/scripts/parse-versions.sh)
-          LATEST_VERSION=$(echo "$ALL_VERSIONS" | jq -r '.[0].version')
+          printf '%s\n' "$ALL_VERSIONS" > /tmp/discovered-versions.json
+          LATEST_VERSION=$(python3 .github/scripts/version-metadata.py latest /tmp/discovered-versions.json)
 
           DELIMITER=$(openssl rand -hex 8)
           { echo "versions<<${DELIMITER}"; echo "${ALL_VERSIONS}"; echo "${DELIMITER}"; } >> $GITHUB_OUTPUT
