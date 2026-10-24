@@ -138,3 +138,12 @@ test('discovery reason is labeled separately from runtime credential rejection',
   assert.match(error.message, /discoveryReason=service_origin/);
   assert.ok(!error.message.includes('; reason='));
 });
+
+test('navigation diagnostics expose origins but never credential-bearing URL components', () => {
+  const { navigationOriginDiagnostic } = require('../.github/scripts/st-download-links');
+  const result = navigationOriginDiagnostic('https://user:secret@intermediate.example:8443/secret;jsessionid=secret?ticket=secret#secret');
+  assert.deepEqual(result, { origin: 'https://intermediate.example:8443', protocol: 'https:', portPresent: true, userinfoPresent: true });
+  assert.ok(!JSON.stringify(result).includes('secret'));
+  assert.equal(navigationOriginDiagnostic('data:text/html,secret').origin, 'non-http-origin');
+  assert.equal(navigationOriginDiagnostic('secret').origin, 'invalid-url');
+});
