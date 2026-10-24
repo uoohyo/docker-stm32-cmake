@@ -140,7 +140,7 @@ jobs:
               ref: 'main',
               inputs: {
                 versions: JSON.stringify(missingVersions),
-                push_to_registry: 'true'
+                push_to_registry: 'false'
               }
             });
 

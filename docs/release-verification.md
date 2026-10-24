@@ -4,7 +4,7 @@
 
 Each version is built and tested independently. Its matrix job publishes the same local image only after its own tests pass. Publication records the image ID, repository digest, and source revision, and verifies a digest-qualified pull. Failed versions remain failed; they do not suppress successful siblings. `latest` requires at least one verified publication receipt and a complete, valid registry lookup. Merely discovered versions never become `latest` candidates.
 
-Use `push_to_registry=false` for a selected-version diagnostic build. This still downloads and installs vendor software; it is **not** an offline or license-free test. Local unit tests and the Validate release reliability workflow use fixtures and do not perform vendor installations or publish images.
+Image build/publication runs only through explicit dispatch; publication defaults to false. Automatic version discovery may request a build-only diagnostic, never a publication. Use `push_to_registry=false` for a selected-version diagnostic build. This still downloads and installs vendor software; it is **not** an offline or license-free test. Local unit tests and the Validate release reliability workflow use fixtures and do not perform vendor installations or publish images.
 
 ## Existing version updates
 
@@ -26,3 +26,7 @@ Before overwriting an existing image, the publication script records its previou
 The maintainer must obtain the official Linux x86_64 ZIP and confirm permission for installation, transfer through a GitHub Actions artifact to the hosted build runner, and any intended image distribution. Cache path: `<CUBECLT_INSTALLER_CACHE_DIR>/1.22.0/stm32cubeclt_1.22.0-Lin-x86_64.sh.zip`. The current installer invokes the vendor's license-acceptance option. Supplying a cache file is not itself proof of permission to accept terms or redistribute it.
 
 This branch preserves PR #44 and corrects a newly confirmed parser defect: the official page exposes www.st.com/cas/login links, while the old code accepted only my.st.com. Both official HTTPS CAS hosts now use strict route/service/version validation. Unauthenticated HTTP access may still be rejected; parser success is not authenticated download success. Missing v1.22 Action/sample coverage is an upstream deployment consequence, not a reason to generate tags for an unavailable image. No authenticated download, installer upload, license acceptance, or registry deployment was performed while developing these fixes.
+
+## Rollback retention limits
+
+The ledger records original manifest metadata and digest before overwrite, and verifies that the old digest can be resolved. Registry retention after retagging is not guaranteed. The metadata artifact alone does not archive every old image layer; if the registry garbage-collects unreferenced blobs, it is not a complete offline recovery backup. Preserve an authorized full image backup when that stronger rollback guarantee is required.
