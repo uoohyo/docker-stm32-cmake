@@ -174,7 +174,7 @@ test('response diagnostics classify canonical routes without values or header fi
 test('downloader fails closed on login forms and HTTP authorization rejection', () => {
   const fs = require('node:fs');
   const source = fs.readFileSync(require('node:path').join(__dirname, '../.github/scripts/download-cubeclt.js'), 'utf8');
-  assert.ok(source.includes('waitForOfficialDownload(page, () => ({'));
+  assert.ok(source.includes('waitForOfficialDownload(page, currentFlowState'));
   assert.ok(!source.includes('page.goto(downloadUrl'));
   assert.ok(source.includes('navigationResponseDiagnostic(response)'));
   assert.ok(!source.includes('postSubmitSignals.license || postSubmitSignals.challenge'));
@@ -224,4 +224,20 @@ test('version-bound return refuses nearby version or OS selectors', () => {
   assert.equal(wrongProductReturn(service.replace(version, '1.21.0'), version), true);
   assert.equal(wrongProductReturn(service.replace('Lnx', 'Win'), version), true);
   assert.equal(wrongProductReturn('https://sso.st.com/intermediate', version), false);
+});
+
+
+test('a filename never overrides an untrusted route, wrong return version, or late failure', async () => {
+  const { assertFlowState, waitForOfficialDownload, stopped } = require('../.github/scripts/st-download-flow');
+  const current = { filename: 'expected.sh.zip', trustedNavigation: true };
+  const page = { url: () => service };
+  for (const state of [{ ...current, trustedNavigation: false }, { ...current, failure: stopped('late HTTP 403') }]) {
+    assert.throws(() => assertFlowState(page, state, version), { nonRetryable: true });
+    await assert.rejects(waitForOfficialDownload(page, () => state, { version }), { nonRetryable: true });
+  }
+  const wrongPage = { url: () => service.replace(version, '1.21.0') };
+  await assert.rejects(waitForOfficialDownload(wrongPage, () => current, { version }), /different product or version/);
+  assert.doesNotThrow(() => assertFlowState(page, current, version));
+  current.failure = stopped('download canceled after start');
+  assert.throws(() => assertFlowState(page, current, version), /canceled after start/);
 });

@@ -25,7 +25,7 @@ const fs = require('fs');
 const path = require('path');
 const { parseVersionInfo, validateLoginUrl, authenticationRedirectError, validateRuntimeCasUrl, validateCredentialForm, isTrustedNavigationUrl, credentialGuardDiagnostic, navigationOriginDiagnostic, pageRouteDiagnostic } = require('./st-download-links');
 
-const { stopped, matchesDownloadTarget, expectedFilename, navigationResponseDiagnostic, waitForOfficialDownload } = require('./st-download-flow');
+const { stopped, matchesDownloadTarget, expectedFilename, navigationResponseDiagnostic, assertFlowState, waitForOfficialDownload } = require('./st-download-flow');
 
 const VERSION    = process.env.CUBECLT_VERSION;
 const USERNAME   = process.env.ST_USERNAME;
@@ -223,11 +223,12 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
     }
 
     console.error('Waiting for the official version-bound ST download flow (up to 120s)...');
-    suggestedFilename = await waitForOfficialDownload(page, () => ({
+    const currentFlowState = () => ({
       filename: suggestedFilename,
       failure: flowFailure || (downloadFailed ? stopped('Download was canceled by the browser') : null),
       trustedNavigation,
-    }), { version: VERSION });
+    });
+    suggestedFilename = await waitForOfficialDownload(page, currentFlowState, { version: VERSION });
 
     // Once the browser has started downloading, allow enough time for the
     // large STM32CubeCLT ZIP to be transferred and verified.
@@ -239,11 +240,13 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
     const CHECK_INTERVAL = 5000;    // 5 seconds between checks
     while (stable < STABLE_CHECKS && Date.now() < deadline) {
       await new Promise(r => setTimeout(r, CHECK_INTERVAL));
+      assertFlowState(page, currentFlowState(), VERSION);
       const sz = fs.existsSync(outFile) ? fs.statSync(outFile).size : 0;
       if (sz > 0 && sz === prevSize) { stable++; } else { stable = 0; prevSize = sz; }
       if (sz > 0) console.error(`  ${Math.round(sz / 1024 / 1024)} MB downloaded...`);
     }
 
+    assertFlowState(page, currentFlowState(), VERSION);
     const finalSize = fs.existsSync(outFile) ? fs.statSync(outFile).size : 0;
     if (finalSize < 1024 * 1024) throw new Error(`File too small (${finalSize} bytes) — likely an error page`);
 
@@ -257,6 +260,7 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
       throw new Error(`Corrupted ZIP file: ${err.message}`);
     }
 
+    assertFlowState(page, currentFlowState(), VERSION);
     console.error(`Download complete (${Math.round(finalSize / 1024 / 1024)} MB)`);
     console.log(outFile); // stdout: path for calling scripts
     return outFile;

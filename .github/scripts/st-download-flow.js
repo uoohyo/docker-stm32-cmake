@@ -63,15 +63,18 @@ function readFlowSignals() {
   };
 }
 
+function assertFlowState(page, current, version) {
+  if (current.failure) throw current.failure;
+  if (!current.trustedNavigation) throw stopped('ST navigation left the trusted flow; authentication is not verified');
+  if (wrongProductReturn(page.url(), version)) throw stopped('ST returned a different product or version; download refused');
+}
+
 async function waitForOfficialDownload(page, state, { version, timeout = 120000, interval = 500, log = console.error } = {}) {
   const deadline = Date.now() + timeout;
   let lastSignals = {};
   while (Date.now() < deadline) {
     const current = state();
-    if (current.failure) throw current.failure;
-    if (current.filename) return current.filename;
-    if (!current.trustedNavigation) throw stopped('ST navigation left the trusted flow; authentication is not verified');
-    if (wrongProductReturn(page.url(), version)) throw stopped('ST returned a different product or version; download refused');
+    assertFlowState(page, current, version);
     // Execution contexts may disappear during an SSO hop. Never force a new
     // navigation just because the previous DOMContentLoaded has fired.
     const signals = await page.evaluate(readFlowSignals).catch(() => null);
@@ -83,10 +86,14 @@ async function waitForOfficialDownload(page, state, { version, timeout = 120000,
       }
       if (signals.usernameInput && signals.passwordInput) throw stopped('ST returned a login form after submission; authentication is not verified');
     }
+    if (state().filename) {
+      assertFlowState(page, state(), version);
+      return state().filename;
+    }
     await new Promise(resolve => setTimeout(resolve, interval));
   }
   log(`  ST continuation timed out: ${JSON.stringify({ ...pageRouteDiagnostic(page.url()), signals: lastSignals })}`);
   throw stopped('Official ST download did not start within the frontend initialization window; no bare URL fallback or automatic login retry');
 }
 
-module.exports = { stopped, matchesDownloadTarget, expectedFilename, navigationResponseDiagnostic, wrongProductReturn, readFlowSignals, waitForOfficialDownload };
+module.exports = { stopped, matchesDownloadTarget, expectedFilename, navigationResponseDiagnostic, wrongProductReturn, readFlowSignals, assertFlowState, waitForOfficialDownload };

@@ -116,6 +116,7 @@ test('official continuation fails closed for auth failures, visible consent/chal
   const version = '1.21.0';
   try {
     for (const scenario of [
+      { body: '<div id="licenseModal"><button class="accept-license">Accept</button></div>', filename: 'expected.sh.zip', expected: /requires consent/ },
       { body: '<form><input name="username"><input type="password"></form>', expected: /login form/ },
       { body: '<div id="licenseModal"><button class="accept-license">Accept</button></div>', expected: /requires consent/ },
       { body: '<input autocomplete="one-time-code">', expected: /requires consent/ },
@@ -129,7 +130,7 @@ test('official continuation fails closed for auth failures, visible consent/chal
       await page.setRequestInterception(true);
       page.on('request', request => void request.respond({ status: 200, contentType: 'text/html', body: `${scenario.body}<script>document.addEventListener('click', recordClick)</script>` }));
       await page.goto(`https://www.st.com/en/development-tools/stm32cubeclt.product=STM32CubeCLT-Lnx.version=${scenario.version || version}.html`);
-      await assert.rejects(waitForOfficialDownload(page, () => ({ trustedNavigation: true, failure: scenario.failure }), { version, timeout: 150, interval: 10, log: () => {} }), error => error.nonRetryable === true && scenario.expected.test(error.message));
+      await assert.rejects(waitForOfficialDownload(page, () => ({ trustedNavigation: true, failure: scenario.failure, filename: scenario.filename }), { version, timeout: 150, interval: 10, log: () => {} }), error => error.nonRetryable === true && scenario.expected.test(error.message));
       assert.equal(clicks, 0, 'never accepts terms or challenges automatically');
       await page.close();
     }
