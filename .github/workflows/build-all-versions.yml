@@ -32,8 +32,6 @@ env:
 
 jobs:
   detect-versions:
-    env:
-      PUPPETEER_CACHE_DIR: ${{ runner.temp }}/puppeteer-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index }}
     runs-on: ubuntu-latest
     outputs:
       versions: ${{ steps.parse.outputs.versions }}
@@ -114,8 +112,6 @@ jobs:
           echo "Linux-supported total: $(printf '%s' "$ALL_VERSIONS" | jq 'length'); to build: $COUNT"
 
   download-installers:
-    env:
-      PUPPETEER_CACHE_DIR: ${{ runner.temp }}/puppeteer-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index }}
     needs: detect-versions
     if: needs.detect-versions.outputs.has_versions == 'true'
     runs-on: self-hosted

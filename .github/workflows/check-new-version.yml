@@ -15,8 +15,6 @@ env:
 
 jobs:
   check-new-version:
-    env:
-      PUPPETEER_CACHE_DIR: ${{ runner.temp }}/puppeteer-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index }}
     runs-on: ubuntu-latest
     permissions:
       issues: write

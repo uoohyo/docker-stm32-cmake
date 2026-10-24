@@ -22,8 +22,6 @@ permissions:
 jobs:
   compatibility:
     runs-on: ${{ matrix.os }}
-    env:
-      PUPPETEER_CACHE_DIR: ${{ runner.temp }}/puppeteer-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -36,9 +34,7 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - name: Install the locked browser dependencies
-        run: |
-          test ! -e "$PUPPETEER_CACHE_DIR"
-          bash .github/scripts/install-browser.sh
+        run: bash .github/scripts/install-browser.sh
       - name: Audit runtime dependencies
         run: npm audit --prefix .github/scripts --omit=dev --audit-level=high
       - name: Test browser APIs without ST credentials or vendor downloads
