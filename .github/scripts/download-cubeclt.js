@@ -113,7 +113,7 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
     let downloadFailed = false;
     client.on('Browser.downloadWillBegin', (event) => {
       suggestedFilename = event.suggestedFilename;
-      console.error(`  Download started: ${suggestedFilename}`);
+      console.error('  Browser download started');
     });
     client.on('Browser.downloadProgress', (event) => {
       if (event.state === 'canceled') downloadFailed = true;
@@ -159,7 +159,7 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
     });
 
     if (authResponse) {
-      console.error(`  Authentication response: HTTP ${authResponse.status()}; type=${authResponse.headers()['content-type'] || 'unknown'}; page=${sanitizedLocation(page.url())}`);
+      console.error(`  Authentication response: ${JSON.stringify(responseDiagnostic(authResponse.status(), authResponse.headers(), page.url()))}`);
     }
 
     // If ST displays an intermediate page rather than redirecting, use an
@@ -287,7 +287,7 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
       throw new Error(`Corrupted ZIP file: ${err.message}`);
     }
 
-    console.error(`Download complete: ${outFile} (${Math.round(finalSize / 1024 / 1024)} MB)`);
+    console.error(`Download complete (${Math.round(finalSize / 1024 / 1024)} MB)`);
     console.log(outFile); // stdout: path for calling scripts
     return outFile;
   } finally {
@@ -310,7 +310,7 @@ async function main() {
     try {
       console.error(`\n[Attempt ${attempt}/${MAX_RETRIES}]`);
       const info = await getVersionInfo(VERSION);
-      console.error(`Download URL: ${info.downloadUrl}`);
+      console.error(`Download endpoint: ${JSON.stringify(pageRouteDiagnostic(info.downloadUrl))}`);
       const outFile = await downloadWithAuth(info);
 
       // Final verification in retry loop (redundant with downloadWithAuth, but ensures robustness)

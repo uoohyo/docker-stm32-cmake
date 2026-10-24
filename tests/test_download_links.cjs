@@ -179,4 +179,7 @@ test('downloader fails closed on consent/challenge and HTTP authorization reject
   assert.ok(source.includes('[401, 403].includes(diagnostic.status)'));
   assert.ok(source.includes('authentication not yet verified'));
   assert.ok(!source.includes('Login navigation succeeded'));
+  assert.ok(!source.includes('Download started: ${suggestedFilename}'));
+  assert.ok(!source.includes('Download URL: ${info.downloadUrl}'));
+  assert.ok(source.includes('responseDiagnostic(authResponse.status()'));
 });
