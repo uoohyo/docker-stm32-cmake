@@ -24,7 +24,7 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
-const { parseVersionInfo, validateLoginUrl } = require('./st-download-links');
+const { parseVersionInfo, validateLoginUrl, authenticationRedirectError } = require('./st-download-links');
 
 const VERSION    = process.env.CUBECLT_VERSION;
 const USERNAME   = process.env.ST_USERNAME;
@@ -104,6 +104,13 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
 
     // Credentials are entered only on a validated official CAS route.
     const isCasPage = () => Boolean(validateLoginUrl(page.url(), VERSION, true));
+    const requireTrustedCredentialPage = async () => {
+      if (isCasPage()) return;
+      const formAction = await page.evaluate(() =>
+        document.querySelector('input[name="username"]')?.closest('form')?.action || ''
+      ).catch(() => '');
+      throw authenticationRedirectError(page.url(), formAction, VERSION);
+    };
 
     // First try the version-specific CAS URL when provided, otherwise
     // allow the official download endpoint to redirect to authentication.
@@ -137,11 +144,11 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
     if (isCasPage()) {
       console.error('  Waiting for ST CAS username input...');
       await page.waitForSelector('input[name="username"]', { timeout: 30000 });
-      console.error('  Entering ST credentials...');
       // A redirect while waiting for the form must not bypass origin validation.
-      if (!isCasPage()) throw new Error('Untrusted authentication redirect');
+      await requireTrustedCredentialPage();
+      console.error('  Entering ST credentials on validated CAS page...');
       await page.type('input[name="username"]', USERNAME, { delay: 50 });
-      if (!isCasPage()) throw new Error('Untrusted authentication redirect before password input');
+      await requireTrustedCredentialPage();
       await page.type('input[name="password"]', PASSWORD, { delay: 50 });
       await Promise.all([
         page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 90000 }),
