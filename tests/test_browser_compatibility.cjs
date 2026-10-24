@@ -135,3 +135,33 @@ test('official continuation fails closed for auth failures, visible consent/chal
     }
   } finally { await browser.close(); }
 });
+
+test('response trace distinguishes a successful login POST redirect from a forbidden return GET', { timeout: 30000 }, async () => {
+  const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+  try {
+    const page = await browser.newPage();
+    const diagnostics = [];
+    await page.setRequestInterception(true);
+    page.on('response', response => {
+      if (response.request().isNavigationRequest() && response.request().frame() === page.mainFrame()) diagnostics.push(navigationResponseDiagnostic(response));
+    });
+    page.on('request', request => {
+      const url = new URL(request.url());
+      if (url.origin === 'https://my.st.com' && url.pathname === '/cas/login' && request.method() === 'GET') {
+        return void request.respond({ status: 200, contentType: 'text/html', body: '<form method="POST" action="/cas/login"><button>Submit empty fixture form</button></form>' });
+      }
+      if (url.origin === 'https://my.st.com' && url.pathname === '/cas/login' && request.method() === 'POST') {
+        return void request.respond({ status: 303, headers: { Location: 'https://www.st.com/en/development-tools/stm32cubeclt.html?ticket=synthetic-private' } });
+      }
+      if (url.origin === 'https://www.st.com' && url.pathname === '/en/development-tools/stm32cubeclt.html') {
+        return void request.respond({ status: 403, contentType: 'text/html', body: 'Synthetic forbidden return page' });
+      }
+      void request.abort();
+    });
+    await page.goto('https://my.st.com/cas/login');
+    await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), page.click('button')]);
+    assert.ok(diagnostics.some(value => value.method === 'POST' && value.status === 303 && value.origin === 'https://my.st.com'));
+    assert.ok(diagnostics.some(value => value.method === 'GET' && value.status === 403 && value.origin === 'https://www.st.com' && value.routeClass === 'product-page'));
+    assert.ok(!JSON.stringify(diagnostics).includes('synthetic-private'));
+  } finally { await browser.close(); }
+});
