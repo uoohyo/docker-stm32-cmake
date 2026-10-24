@@ -141,6 +141,7 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
       // A redirect while waiting for the form must not bypass origin validation.
       if (!isCasPage()) throw new Error('Untrusted authentication redirect');
       await page.type('input[name="username"]', USERNAME, { delay: 50 });
+      if (!isCasPage()) throw new Error('Untrusted authentication redirect before password input');
       await page.type('input[name="password"]', PASSWORD, { delay: 50 });
       await Promise.all([
         page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 90000 }),
