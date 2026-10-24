@@ -3,15 +3,14 @@
  * Download STM32CubeCLT-Lnx installer using Puppeteer.
  *
  * Why Puppeteer: ST's download proxy requires an authenticated session established
- * via CAS SSO. Plain curl/fetch requests are blocked by ST's anti-bot layer.
- * Chrome's TLS fingerprint and header set pass through consistently.
+ * via CAS SSO and the official product page's asynchronous download flow.
  *
  * Flow:
  *   1. Fetch sw-versions-nli.html (direct navigation) to get the download path
  *      and CAS login URL for the requested version.
  *   2. Navigate to the CAS login URL (includes ?service= so the ticket is bound
  *      to www.st.com) and fill in credentials.
- *   3. After CAS redirects back to www.st.com, navigate to the download URL.
+ *   3. Preserve the version-bound return page and its official continuation.
  *   4. Capture the file via CDP download behavior; poll until stable.
  *
  * Required env vars: CUBECLT_VERSION, ST_USERNAME, ST_PASSWORD
@@ -24,7 +23,9 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
-const { parseVersionInfo, validateLoginUrl, authenticationRedirectError, sanitizedLocation, validateRuntimeCasUrl, validateCredentialForm, isTrustedNavigationUrl, credentialGuardDiagnostic, navigationOriginDiagnostic, pageRouteDiagnostic, responseDiagnostic, postSubmissionBlocked } = require('./st-download-links');
+const { parseVersionInfo, validateLoginUrl, authenticationRedirectError, validateRuntimeCasUrl, validateCredentialForm, isTrustedNavigationUrl, credentialGuardDiagnostic, navigationOriginDiagnostic, pageRouteDiagnostic } = require('./st-download-links');
+
+const { stopped, matchesDownloadTarget, expectedFilename, navigationResponseDiagnostic, waitForOfficialDownload } = require('./st-download-flow');
 
 const VERSION    = process.env.CUBECLT_VERSION;
 const USERNAME   = process.env.ST_USERNAME;
@@ -77,6 +78,8 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
   try {
     const page = await browser.newPage();
     let trustedNavigation = true;
+    let flowFailure = null;
+    const installerFilename = expectedFilename(downloadUrl);
     const rejectedNavigation = [];
     const inspectNavigation = (value, source) => {
       if (isTrustedNavigationUrl(value)) return;
@@ -91,6 +94,23 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
       const request = response.request();
       if (!request.isNavigationRequest() || request.frame() !== page.mainFrame()) return;
       for (const item of [...request.redirectChain(), request]) inspectNavigation(item.url(), 'http-chain');
+      const diagnostic = navigationResponseDiagnostic(response);
+      console.error(`  ST main-frame response: ${JSON.stringify(diagnostic)}`);
+      if ([401, 403].includes(diagnostic.status)) flowFailure = stopped(`ST navigation returned HTTP ${diagnostic.status}; authentication is not verified`);
+    });
+    // Refuse a wrong-version endpoint before any file request leaves the browser.
+    // Allow ST's own frontend to construct session parameters; never inspect or
+    // copy their values into Node, logs, or a manually assembled request.
+    await page.setRequestInterception(true);
+    page.on('request', request => {
+      const route = pageRouteDiagnostic(request.url());
+      if (request.isNavigationRequest() &&
+          route.routeClass === 'download-endpoint' && !matchesDownloadTarget(request.url(), downloadUrl)) {
+        flowFailure = stopped('ST attempted a different installer target; request blocked');
+        void request.abort().catch(() => {});
+      } else {
+        void request.continue().catch(() => {});
+      }
     });
     // Hide headless Chrome indicators
     await page.evaluateOnNewDocument(() => {
@@ -112,7 +132,12 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
     let suggestedFilename = null;
     let downloadFailed = false;
     client.on('Browser.downloadWillBegin', (event) => {
-      suggestedFilename = event.suggestedFilename;
+      if (event.suggestedFilename !== installerFilename) {
+        flowFailure = stopped('ST download filename does not match the requested installer; download canceled');
+        void client.send('Browser.cancelDownload', { guid: event.guid }).catch(() => {});
+        return;
+      }
+      suggestedFilename = installerFilename;
       console.error('  Browser download started');
     });
     client.on('Browser.downloadProgress', (event) => {
@@ -159,8 +184,10 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
     });
 
     if (authResponse) {
-      console.error(`  Authentication response: ${JSON.stringify(responseDiagnostic(authResponse.status(), authResponse.headers(), page.url()))}`);
+      console.error(`  Authentication response: ${JSON.stringify(navigationResponseDiagnostic(authResponse))}`);
     }
+
+    if (flowFailure) throw flowFailure;
 
     // If ST displays an intermediate page rather than redirecting, use an
     // official CAS link offered by that page; never follow arbitrary hosts.
@@ -186,77 +213,21 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
       await page.type('input[name="password"]', PASSWORD, { delay: 50 });
       await requireTrustedCredentialPage();
       const [submissionResponse] = await Promise.all([
-        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 90000 }),
+        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {
+          throw stopped('ST login submission did not complete navigation; authentication is not verified, no automatic retry');
+        }),
         page.keyboard.press('Enter'),
       ]);
-      console.error(`  Login submission navigation: ${JSON.stringify(responseDiagnostic(submissionResponse?.status(), submissionResponse?.headers() || {}, page.url()))}`);
+      console.error(`  Login submission navigation: ${JSON.stringify(submissionResponse ? navigationResponseDiagnostic(submissionResponse) : { status: null })}`);
       console.error('  Login form submitted; navigation completed (authentication not yet verified)');
     }
 
-    // In some ST flows the authenticated redirect begins a file download.
-    // Otherwise request the exact version URL with the same browser session.
-    if (!suggestedFilename) {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-    }
-    if (!suggestedFilename && !downloadFailed) {
-      const postSubmitSignals = await page.evaluate(() => {
-        const visible = document.body?.innerText?.toLowerCase() || '';
-        return {
-          usernameInput: !!document.querySelector('input[name="username"]'),
-          passwordInput: !!document.querySelector('input[type="password"]'),
-          license: /license agreement|i accept/.test(visible),
-          challenge: /verification code|two.factor|one.time password|captcha/.test(visible),
-        };
-      }).catch(() => ({ unavailable: true }));
-      console.error(`  Before download request: ${JSON.stringify({ ...pageRouteDiagnostic(page.url()), trustedNavigation, signals: postSubmitSignals })}`);
-      if (postSubmissionBlocked(page.url(), trustedNavigation, postSubmitSignals)) {
-        const error = new Error('ST navigation or login form is not ready for download; no automatic retry');
-        error.nonRetryable = true;
-        throw error;
-      }
-      console.error('Requesting STM32CubeCLT download...');
-      const downloadResponse = await page.goto(downloadUrl, {
-        waitUntil: 'domcontentloaded',
-        timeout: 30000,
-      }).catch(error => {
-        console.error(`  Download navigation interrupted (${error.name}); waiting for download signals`);
-      });
-      if (downloadResponse) {
-        const diagnostic = responseDiagnostic(downloadResponse.status(), downloadResponse.headers(), page.url());
-        console.error(`  Download response: ${JSON.stringify(diagnostic)}`);
-        if ([401, 403].includes(diagnostic.status)) {
-          const error = new Error(`ST download request rejected with HTTP ${diagnostic.status}; authentication is not verified`);
-          error.nonRetryable = true;
-          throw error;
-        }
-      }
-    }
-
-    // Do not hold the self-hosted runner for the full transfer timeout when
-    // ST never started a download (e.g. login/consent page).
-    const downloadStartDeadline = Date.now() + 90000;
-    while (!suggestedFilename && !downloadFailed && Date.now() < downloadStartDeadline) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    }
-    if (downloadFailed) throw new Error('Download was canceled by the browser');
-    if (!suggestedFilename) {
-      let pagePath = 'unknown';
-      try {
-        pagePath = sanitizedLocation(page.url());
-      } catch {}
-
-      const signals = await page.evaluate(() => {
-        const visible = document.body?.innerText?.toLowerCase() || '';
-        return {
-          login: /log[ -]?in|sign[ -]?in/.test(visible),
-          guest: /download as (a )?guest/.test(visible),
-          license: /license agreement|i accept/.test(visible),
-          usernameInput: !!document.querySelector('input[name="username"]'),
-          passwordInput: !!document.querySelector('input[type="password"]'),
-        };
-      }).catch(() => ({ unavailable: true }));
-      throw new Error(`Download did not start within 90s; page=${pagePath}; signals=${JSON.stringify(signals)}`);
-    }
+    console.error('Waiting for the official version-bound ST download flow (up to 120s)...');
+    suggestedFilename = await waitForOfficialDownload(page, () => ({
+      filename: suggestedFilename,
+      failure: flowFailure || (downloadFailed ? stopped('Download was canceled by the browser') : null),
+      trustedNavigation,
+    }), { version: VERSION });
 
     // Once the browser has started downloading, allow enough time for the
     // large STM32CubeCLT ZIP to be transferred and verified.
@@ -278,9 +249,9 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
 
     // Verify ZIP integrity to catch corrupted/incomplete downloads
     console.error('Verifying ZIP integrity...');
-    const { execSync } = require('child_process');
+    const { execFileSync } = require('child_process');
     try {
-      execSync(`unzip -t "${outFile}"`, { stdio: 'pipe' });
+      execFileSync('unzip', ['-t', outFile], { stdio: 'pipe' });
       console.error('✓ ZIP integrity check passed');
     } catch (err) {
       throw new Error(`Corrupted ZIP file: ${err.message}`);
@@ -313,8 +284,8 @@ async function main() {
       const outFile = await downloadWithAuth(info);
 
       // Final verification in retry loop (redundant with downloadWithAuth, but ensures robustness)
-      const { execSync } = require('child_process');
-      execSync(`unzip -t "${outFile}"`, { stdio: 'pipe' });
+      const { execFileSync } = require('child_process');
+      execFileSync('unzip', ['-t', outFile], { stdio: 'pipe' });
       console.error('✓ Download and verification successful');
       return;
     } catch (e) {

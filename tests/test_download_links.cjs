@@ -174,14 +174,16 @@ test('response diagnostics classify canonical routes without values or header fi
 test('downloader fails closed on login forms and HTTP authorization rejection', () => {
   const fs = require('node:fs');
   const source = fs.readFileSync(require('node:path').join(__dirname, '../.github/scripts/download-cubeclt.js'), 'utf8');
-  assert.ok(source.includes('postSubmissionBlocked(page.url(), trustedNavigation, postSubmitSignals)'));
+  assert.ok(source.includes('waitForOfficialDownload(page, () => ({'));
+  assert.ok(!source.includes('page.goto(downloadUrl'));
+  assert.ok(source.includes('navigationResponseDiagnostic(response)'));
   assert.ok(!source.includes('postSubmitSignals.license || postSubmitSignals.challenge'));
   assert.ok(source.includes('[401, 403].includes(diagnostic.status)'));
   assert.ok(source.includes('authentication not yet verified'));
   assert.ok(!source.includes('Login navigation succeeded'));
   assert.ok(!source.includes('Download started: ${suggestedFilename}'));
   assert.ok(!source.includes('Download URL: ${info.downloadUrl}'));
-  assert.ok(source.includes('responseDiagnostic(authResponse.status()'));
+  assert.ok(source.includes('navigationResponseDiagnostic(authResponse)'));
 });
 
 
@@ -192,4 +194,34 @@ test('footer license or CAPTCHA mentions are diagnostic only, not pending intera
   assert.equal(postSubmissionBlocked('https://www.st.com/product', false, footer), true);
   assert.equal(postSubmissionBlocked('https://my.st.com/cas/login;jsessionid=secret', true, footer), true);
   assert.equal(postSubmissionBlocked('https://www.st.com/product', true, { ...footer, usernameInput: true, passwordInput: true }), true);
+});
+
+const { matchesDownloadTarget, expectedFilename, navigationResponseDiagnostic, wrongProductReturn } = require('../.github/scripts/st-download-flow');
+test('binds browser-generated download requests to exact metadata target without reading session values', () => {
+  const target = `https://www.st.com${download}`;
+  assert.ok(matchesDownloadTarget(`${target}&token=private&guest=false&email=private&marker=private`, target));
+  for (const candidate of [target.replace(version, '1.21.0'), target.replace('Lnx', 'Win'),
+    target.replace('www.st.com', 'evil.example'), `${target}&s3url=other`, target.replace('https:', 'http:')]) {
+    assert.equal(matchesDownloadTarget(candidate, target), false);
+  }
+  assert.equal(expectedFilename(target), `stm32cubeclt_${version}-Lin-x86_64.sh.zip`);
+  assert.throws(() => expectedFilename('https://www.st.com/?s3url=bad%22.sh.zip'));
+});
+test('HTTP response diagnostics use response origin even when browser page is an error', () => {
+  const response = {
+    request: () => ({ method: () => 'POST' }), status: () => 403,
+    headers: () => ({ 'content-type': 'text/html', 'set-cookie': 'private' }),
+    url: () => 'https://my.st.com/cas/login;jsessionid=private?ticket=private',
+  };
+  assert.deepEqual(navigationResponseDiagnostic(response), {
+    method: 'POST', origin: 'https://my.st.com', routeClass: 'cas-login', status: 403,
+    contentType: 'text/html', attachment: false,
+  });
+  assert.ok(!JSON.stringify(navigationResponseDiagnostic(response)).includes('private'));
+});
+test('version-bound return refuses nearby version or OS selectors', () => {
+  assert.equal(wrongProductReturn(service, version), false);
+  assert.equal(wrongProductReturn(service.replace(version, '1.21.0'), version), true);
+  assert.equal(wrongProductReturn(service.replace('Lnx', 'Win'), version), true);
+  assert.equal(wrongProductReturn('https://sso.st.com/intermediate', version), false);
 });
