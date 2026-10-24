@@ -24,7 +24,7 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
-const { parseVersionInfo, validateLoginUrl, authenticationRedirectError, sanitizedLocation, validateRuntimeCasUrl, validateCredentialForm, isTrustedNavigationUrl } = require('./st-download-links');
+const { parseVersionInfo, validateLoginUrl, authenticationRedirectError, sanitizedLocation, validateRuntimeCasUrl, validateCredentialForm, isTrustedNavigationUrl, credentialGuardDiagnostic } = require('./st-download-links');
 
 const VERSION    = process.env.CUBECLT_VERSION;
 const USERNAME   = process.env.ST_USERNAME;
@@ -129,6 +129,7 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
         return {
           action: first?.action || '', method: first?.method || '',
           sameForm: Boolean(first && first === second),
+          usernamePresent: Boolean(username), passwordPresent: Boolean(password),
           submitters: submitters.map(control => ({
             action: control.hasAttribute('formaction') ? control.formAction : first.action,
             method: control.hasAttribute('formmethod') ? control.formMethod : first.method,
@@ -136,7 +137,9 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
         };
       }).catch(() => ({ action: '', sameForm: false }));
       if (!isCasPage() || !validateCredentialForm(forms, page.url(), casLoginUrl, VERSION)) {
-        throw authenticationRedirectError(page.url(), forms.action, VERSION);
+        const error = authenticationRedirectError(page.url(), forms.action, VERSION);
+        error.message += `; credentialGuard=${JSON.stringify(credentialGuardDiagnostic(forms, page.url(), casLoginUrl, VERSION, trustedNavigation))}`;
+        throw error;
       }
     };
 
