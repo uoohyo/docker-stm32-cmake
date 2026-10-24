@@ -72,6 +72,33 @@ function navigationOriginDiagnostic(value) {
   } catch { return { origin: 'invalid-url', protocol: 'invalid' }; }
 }
 
+function pageRouteDiagnostic(value) {
+  try {
+    const url = new URL(value);
+    const route = url.pathname.split(';', 1)[0];
+    const routeClass = route === '/cas/login' ? 'cas-login' :
+      route === '/bin/st/s3-software-download' ? 'download-endpoint' :
+      route.startsWith('/en/development-tools/stm32cubeclt.') ? 'product-page' : 'other';
+    return { origin: ['https:', 'http:'].includes(url.protocol) ? url.origin : 'non-http-origin', routeClass };
+  } catch { return { origin: 'invalid-url', routeClass: 'unknown' }; }
+}
+
+function responseDiagnostic(status, headers, location) {
+  const mime = (headers['content-type'] || '').split(';', 1)[0].trim().toLowerCase();
+  return {
+    ...pageRouteDiagnostic(location),
+    status: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null,
+    contentType: ['text/html', 'application/json', 'application/zip', 'application/octet-stream', 'text/plain'].includes(mime) ? mime : 'other',
+    attachment: /^attachment(?:;|$)/i.test(headers['content-disposition'] || ''),
+  };
+}
+
+function postSubmissionBlocked(location, trustedNavigation, signals) {
+  // Footer/legal/challenge mentions are not proof of a pending interaction.
+  return !trustedNavigation || pageRouteDiagnostic(location).routeClass === 'cas-login' ||
+    Boolean(signals.usernameInput && signals.passwordInput);
+}
+
 function validateCredentialForm(form, pageUrl, initialLoginUrl, version) {
   const validTarget = target => target.method?.toLowerCase() === 'post' &&
     validateCredentialFormAction(target.action, pageUrl, initialLoginUrl, version);
@@ -156,4 +183,4 @@ function parseVersionInfo(html, version) {
   return { downloadUrl: `https://www.st.com${target}`, casLoginUrl: candidates[0] };
 }
 
-module.exports = { validateLoginUrl, parseVersionInfo, sanitizedLocation, authenticationRedirectError, loginUrlRejectionReason, serviceOriginDiagnostic, validateRuntimeCasUrl, validateCredentialFormAction, validateCredentialForm, isTrustedNavigationUrl, credentialGuardDiagnostic, navigationOriginDiagnostic };
+module.exports = { validateLoginUrl, parseVersionInfo, sanitizedLocation, authenticationRedirectError, loginUrlRejectionReason, serviceOriginDiagnostic, validateRuntimeCasUrl, validateCredentialFormAction, validateCredentialForm, isTrustedNavigationUrl, credentialGuardDiagnostic, navigationOriginDiagnostic, pageRouteDiagnostic, responseDiagnostic, postSubmissionBlocked };
