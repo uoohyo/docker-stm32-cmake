@@ -58,7 +58,7 @@ jobs:
           node-version: '22'
 
       - name: Install scraper dependencies
-        run: npm ci --prefix .github/scripts
+        run: bash .github/scripts/install-browser.sh
 
       - name: Get all versions from ST
         id: st-versions
