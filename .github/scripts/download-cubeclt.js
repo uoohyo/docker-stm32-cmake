@@ -24,7 +24,7 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
-const { parseVersionInfo, validateLoginUrl, authenticationRedirectError, sanitizedLocation, validateRuntimeCasUrl, validateCredentialForm, isTrustedNavigationUrl, credentialGuardDiagnostic } = require('./st-download-links');
+const { parseVersionInfo, validateLoginUrl, authenticationRedirectError, sanitizedLocation, validateRuntimeCasUrl, validateCredentialForm, isTrustedNavigationUrl, credentialGuardDiagnostic, navigationOriginDiagnostic } = require('./st-download-links');
 
 const VERSION    = process.env.CUBECLT_VERSION;
 const USERNAME   = process.env.ST_USERNAME;
@@ -77,16 +77,20 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
   try {
     const page = await browser.newPage();
     let trustedNavigation = true;
+    const rejectedNavigation = [];
+    const inspectNavigation = (value, source) => {
+      if (isTrustedNavigationUrl(value)) return;
+      trustedNavigation = false;
+      if (rejectedNavigation.length < 8) rejectedNavigation.push({ source, ...navigationOriginDiagnostic(value) });
+    };
     page.on('framenavigated', frame => {
       if (frame !== page.mainFrame() || frame.url() === 'about:blank') return;
-      try {
-        if (!isTrustedNavigationUrl(frame.url())) trustedNavigation = false;
-      } catch { trustedNavigation = false; }
+      inspectNavigation(frame.url(), 'committed');
     });
     page.on('response', response => {
       const request = response.request();
       if (!request.isNavigationRequest() || request.frame() !== page.mainFrame()) return;
-      if (![...request.redirectChain(), request].every(item => isTrustedNavigationUrl(item.url()))) trustedNavigation = false;
+      for (const item of [...request.redirectChain(), request]) inspectNavigation(item.url(), 'http-chain');
     });
     // Hide headless Chrome indicators
     await page.evaluateOnNewDocument(() => {
@@ -138,7 +142,7 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
       }).catch(() => ({ action: '', sameForm: false }));
       if (!isCasPage() || !validateCredentialForm(forms, page.url(), casLoginUrl, VERSION)) {
         const error = authenticationRedirectError(page.url(), forms.action, VERSION);
-        error.message += `; credentialGuard=${JSON.stringify(credentialGuardDiagnostic(forms, page.url(), casLoginUrl, VERSION, trustedNavigation))}`;
+        error.message += `; credentialGuard=${JSON.stringify(credentialGuardDiagnostic(forms, page.url(), casLoginUrl, VERSION, trustedNavigation))}; rejectedNavigation=${JSON.stringify(rejectedNavigation)}`;
         throw error;
       }
     };

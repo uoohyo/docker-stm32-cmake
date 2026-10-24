@@ -58,6 +58,18 @@ function isTrustedNavigationUrl(value) {
   } catch { return false; }
 }
 
+function navigationOriginDiagnostic(value) {
+  try {
+    const url = new URL(value);
+    return {
+      origin: ['https:', 'http:'].includes(url.protocol) ? url.origin : 'non-http-origin',
+      protocol: url.protocol,
+      portPresent: Boolean(url.port),
+      userinfoPresent: Boolean(url.username || url.password),
+    };
+  } catch { return { origin: 'invalid-url', protocol: 'invalid' }; }
+}
+
 function validateCredentialForm(form, pageUrl, initialLoginUrl, version) {
   const validTarget = target => target.method?.toLowerCase() === 'post' &&
     validateCredentialFormAction(target.action, pageUrl, initialLoginUrl, version);
@@ -142,4 +154,4 @@ function parseVersionInfo(html, version) {
   return { downloadUrl: `https://www.st.com${target}`, casLoginUrl: candidates[0] };
 }
 
-module.exports = { validateLoginUrl, parseVersionInfo, sanitizedLocation, authenticationRedirectError, loginUrlRejectionReason, serviceOriginDiagnostic, validateRuntimeCasUrl, validateCredentialFormAction, validateCredentialForm, isTrustedNavigationUrl, credentialGuardDiagnostic };
+module.exports = { validateLoginUrl, parseVersionInfo, sanitizedLocation, authenticationRedirectError, loginUrlRejectionReason, serviceOriginDiagnostic, validateRuntimeCasUrl, validateCredentialFormAction, validateCredentialForm, isTrustedNavigationUrl, credentialGuardDiagnostic, navigationOriginDiagnostic };
