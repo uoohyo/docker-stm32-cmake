@@ -24,7 +24,7 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
-const { parseVersionInfo, validateLoginUrl, authenticationRedirectError } = require('./st-download-links');
+const { parseVersionInfo, validateLoginUrl, authenticationRedirectError, sanitizedLocation } = require('./st-download-links');
 
 const VERSION    = process.env.CUBECLT_VERSION;
 const USERNAME   = process.env.ST_USERNAME;
@@ -124,8 +124,7 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
     });
 
     if (authResponse) {
-      const location = new URL(page.url());
-      console.error(`  Authentication response: HTTP ${authResponse.status()}; type=${authResponse.headers()['content-type'] || 'unknown'}; page=${location.origin}${location.pathname}`);
+      console.error(`  Authentication response: HTTP ${authResponse.status()}; type=${authResponse.headers()['content-type'] || 'unknown'}; page=${sanitizedLocation(page.url())}`);
     }
 
     // If ST displays an intermediate page rather than redirecting, use an
@@ -183,9 +182,7 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
     if (!suggestedFilename) {
       let pagePath = 'unknown';
       try {
-        const u = new URL(page.url());
-        // Do not log query parameters: ST can place authorization tokens there.
-        pagePath = u.origin + u.pathname;
+        pagePath = sanitizedLocation(page.url());
       } catch {}
 
       const signals = await page.evaluate(() => {

@@ -39,10 +39,23 @@ test('untrusted redirect diagnostics omit secrets and are not retried', () => {
   const error = authenticationRedirectError('https://user:secret@my.st.com/changed?token=secret#secret', 'https://my.st.com/submit?token=secret', version);
   assert.equal(error.nonRetryable, true);
   assert.match(error.message, /reason=authority/);
-  assert.match(error.message, /page=https:\/\/my.st.com\/changed/);
+  assert.match(error.message, /page=https:\/\/my.st.com\/\[redacted-path\]/);
   assert.ok(!error.message.includes('secret'));
   assert.equal(loginUrlRejectionReason('https://my.st.com/cas/login', version), 'none');
   assert.equal(loginUrlRejectionReason('https://my.st.com/changed', version), 'path');
   assert.equal(loginUrlRejectionReason('https://evil.example/cas/login', version), 'host');
   assert.equal(loginUrlRejectionReason(login('www.st.com'), '1.21.0'), 'product_version');
+});
+
+
+test('CAS diagnostics redact matrix sessions and arbitrary path secrets', () => {
+  const { sanitizedLocation, authenticationRedirectError } = require('../.github/scripts/st-download-links');
+  assert.equal(sanitizedLocation('https://my.st.com/cas/login;jsessionid=secret?ticket=secret'), 'https://my.st.com/cas/login');
+  assert.equal(sanitizedLocation('https://my.st.com/cas/secret/login'), 'https://my.st.com/[redacted-path]');
+  const service = encodeURIComponent('https://user:secret@service.st.com:8443/secret?ticket=secret');
+  const error = authenticationRedirectError(`https://my.st.com/cas/login?service=${service}`, 'https://my.st.com/cas/login;jsessionid=secret', version);
+  assert.ok(!error.message.includes('secret'));
+  assert.match(error.message, /service.st.com:8443/);
+  assert.match(error.message, /"userinfoPresent":true/);
+  assert.equal(error.nonRetryable, true);
 });

@@ -44,12 +44,22 @@ function loginUrlRejectionReason(value, version) {
 function sanitizedLocation(value) {
   try {
     const url = new URL(value);
-    return `${url.origin}${url.pathname}`;
+    // CAS may embed a live session ID in a semicolon path parameter.
+    // Unknown routes may also carry credential material in path segments.
+    const route = url.pathname.split(';', 1)[0];
+    return `${url.origin}${route === '/cas/login' ? route : '/[redacted-path]'}`;
   } catch { return 'invalid-url'; }
 }
 
+function serviceOriginDiagnostic(location) {
+  try {
+    const target = new URL(new URL(location).searchParams.get('service'));
+    return { origin: target.origin, protocol: target.protocol, portPresent: Boolean(target.port), userinfoPresent: Boolean(target.username || target.password) };
+  } catch { return { origin: 'missing-or-invalid' }; }
+}
+
 function authenticationRedirectError(location, formAction, version) {
-  const error = new Error(`Untrusted authentication redirect; reason=${loginUrlRejectionReason(location, version)}; page=${sanitizedLocation(location)}; form=${sanitizedLocation(formAction)}`);
+  const error = new Error(`Untrusted authentication redirect; reason=${loginUrlRejectionReason(location, version)}; page=${sanitizedLocation(location)}; form=${sanitizedLocation(formAction)}; service=${JSON.stringify(serviceOriginDiagnostic(location))}`);
   error.nonRetryable = true;
   return error;
 }
@@ -71,4 +81,4 @@ function parseVersionInfo(html, version) {
   return { downloadUrl: `https://www.st.com${target}`, casLoginUrl: candidates[0] };
 }
 
-module.exports = { validateLoginUrl, parseVersionInfo, sanitizedLocation, authenticationRedirectError, loginUrlRejectionReason };
+module.exports = { validateLoginUrl, parseVersionInfo, sanitizedLocation, authenticationRedirectError, loginUrlRejectionReason, serviceOriginDiagnostic };
