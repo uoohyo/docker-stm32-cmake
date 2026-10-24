@@ -24,6 +24,7 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
+const { parseVersionInfo, validateLoginUrl } = require('./st-download-links');
 
 const VERSION    = process.env.CUBECLT_VERSION;
 const USERNAME   = process.env.ST_USERNAME;
@@ -32,8 +33,6 @@ const OUTPUT_DIR = path.resolve(process.env.OUTPUT_DIR || '.');
 const MAX_RETRIES = 3;
 
 const ST_VERSIONS_URL = 'https://www.st.com/content/st_com/en/products/development-tools/software-development-tools/stm32-software-development-tools/stm32-ides/stm32cubeclt.sw-versions-nli.html';
-
-function esc(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 function launchBrowser() {
   return puppeteer.launch({
@@ -60,64 +59,10 @@ async function getVersionInfo(version) {
     await page.setExtraHTTPHeaders({ 'Referer': 'https://www.st.com/en/development-tools/stm32cubeclt.html' });
 
     const res = await page.goto(ST_VERSIONS_URL, { waitUntil: 'networkidle2', timeout: 120000 });
+    if (!res || res.status() >= 400) throw new Error(`ST version page unavailable: HTTP ${res ? res.status() : 'no-response'}`);
     const html = await res.text();
 
-    const dlMatch = html.match(
-      new RegExp(`data-download-path="(/bin/st/s3-software-download\\?s3url=publish/STM32CubeCLT-Lnx/${esc(version)}/[^"]+\\.sh\\.zip)"`, 'i')
-    );
-    if (!dlMatch) throw new Error(`Download path not found for ${version}`);
-
-    // ST may use HTML-encoded or version-agnostic CAS URLs. Avoid tying
-    // authentication discovery to a specific product query-string layout.
-    const candidates = [...html.matchAll(/data-reg-required-link-path=(["'])(.*?)\1/gi)]
-      .map(match => {
-        const value = match[2].replace(/&amp;/g, '&');
-        try {
-          const parsed = new URL(value, 'https://my.st.com');
-          if (parsed.protocol !== 'https:' || parsed.hostname !== 'my.st.com' ||
-              !parsed.pathname.startsWith('/cas/login')) return null;
-          return { url: parsed.href, position: match.index };
-        } catch {
-          return null;
-        }
-      })
-      .filter(Boolean);
-
-    if (candidates.length === 0) {
-      // Current ST versions may expose a download path but no CAS link.
-      // Follow the official download URL and handle its authentication
-      // redirect instead of guessing an ST login service URL.
-      // Official ST downloads for this version no longer provide the CAS
-      // service URL needed for automated authentication. Retrying the same
-      // anonymous endpoint only causes long, repetitive CI failures.
-      const error = new Error(`ST_AUTH_FLOW_CHANGED for ${version}: no CAS login URL. Download the official ZIP through ST and configure CUBECLT_INSTALLER_CACHE_DIR on the trusted runner.`);
-      error.nonRetryable = true;
-      throw error;
-    }
-
-    const targetPosition = dlMatch.index;
-    const containsVersion = candidate => {
-      try {
-        return decodeURIComponent(candidate.url).includes(`STM32CubeCLT-Lnx.version=${version}`);
-      } catch {
-        return candidate.url.includes(version);
-      }
-    };
-
-    // Prefer a version-specific link; otherwise use the nearest ST CAS
-    // login link. The subsequent file URL remains tied to the requested version.
-    const casMatch = candidates.find(containsVersion) ||
-      candidates.sort((a, b) =>
-        Math.abs(a.position - targetPosition) - Math.abs(b.position - targetPosition))[0];
-
-    if (!containsVersion(casMatch)) {
-      console.error(`No exact CAS URL for ${version}; using closest ST CAS login link`);
-    }
-
-    return {
-      downloadUrl: `https://www.st.com${dlMatch[1]}`,
-      casLoginUrl: casMatch.url,
-    };
+    return parseVersionInfo(html, version);
   } finally {
     await browser.close();
   }
@@ -157,40 +102,32 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
       if (event.state === 'canceled') downloadFailed = true;
     });
 
-    const isCasPage = () => {
-      try {
-        const url = new URL(page.url());
-        return url.protocol === 'https:' && url.hostname === 'my.st.com';
-      } catch {
-        return false;
-      }
-    };
+    // Credentials are entered only on a validated official CAS route.
+    const isCasPage = () => Boolean(validateLoginUrl(page.url(), VERSION, true));
 
     // First try the version-specific CAS URL when provided, otherwise
     // allow the official download endpoint to redirect to authentication.
     console.error('Opening ST authentication/download URL...');
-    await page.goto(casLoginUrl || downloadUrl, {
+    const authResponse = await page.goto(casLoginUrl || downloadUrl, {
       waitUntil: 'domcontentloaded',
       timeout: 90000,
     }).catch(error => {
       // Chromium aborts navigation when the response is a file download.
-      console.error(`  Initial navigation: ${error.message}`);
+      console.error(`  Initial navigation interrupted (${error.name}); waiting for download/form signals`);
     });
+
+    if (authResponse) {
+      const location = new URL(page.url());
+      console.error(`  Authentication response: HTTP ${authResponse.status()}; type=${authResponse.headers()['content-type'] || 'unknown'}; page=${location.origin}${location.pathname}`);
+    }
 
     // If ST displays an intermediate page rather than redirecting, use an
     // official CAS link offered by that page; never follow arbitrary hosts.
     if (!suggestedFilename && !isCasPage()) {
-      const loginLink = await page.evaluate(() => {
-        const anchors = [...document.querySelectorAll('a[href]')];
-        for (const anchor of anchors) {
-          try {
-            const url = new URL(anchor.href);
-            if (url.protocol === 'https:' && url.hostname === 'my.st.com' &&
-                url.pathname.startsWith('/cas/login')) return url.href;
-          } catch {}
-        }
-        return null;
-      }).catch(() => null);
+      const anchors = await page.evaluate(() =>
+        [...document.querySelectorAll('a[href]')].map(anchor => anchor.href)
+      ).catch(() => []);
+      const loginLink = anchors.map(value => validateLoginUrl(value, VERSION)).find(Boolean);
       if (loginLink) {
         console.error('Following ST login link from download page...');
         await page.goto(loginLink, { waitUntil: 'domcontentloaded', timeout: 90000 });
@@ -201,6 +138,8 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
       console.error('  Waiting for ST CAS username input...');
       await page.waitForSelector('input[name="username"]', { timeout: 30000 });
       console.error('  Entering ST credentials...');
+      // A redirect while waiting for the form must not bypass origin validation.
+      if (!isCasPage()) throw new Error('Untrusted authentication redirect');
       await page.type('input[name="username"]', USERNAME, { delay: 50 });
       await page.type('input[name="password"]', PASSWORD, { delay: 50 });
       await Promise.all([
@@ -222,7 +161,7 @@ async function downloadWithAuth({ casLoginUrl, downloadUrl }) {
         waitUntil: 'domcontentloaded',
         timeout: 30000,
       }).catch(error => {
-        console.error(`  Download navigation: ${error.message}`);
+        console.error(`  Download navigation interrupted (${error.name}); waiting for download signals`);
       });
     }
 

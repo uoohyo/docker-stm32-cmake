@@ -27,3 +27,10 @@ jobs:
           find .github/scripts -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
       - name: Run offline regression tests
         run: python3 -m unittest discover -s tests -v
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Validate ST link parsing without credentials or network
+        run: |
+          node --check .github/scripts/download-cubeclt.js
+          node --test tests/test_download_links.cjs

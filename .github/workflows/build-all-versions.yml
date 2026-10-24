@@ -17,6 +17,10 @@ on:
         type: boolean
         required: false
         default: true
+      existing_versions_only:
+        description: 'Rebuild only currently published versions; require a rollback digest before overwrite'
+        type: boolean
+        default: false
       force_rebuild:
         description: 'Rebuild all selected versions even if they exist on Docker Hub'
         type: boolean
@@ -71,7 +75,12 @@ jobs:
           fi
 
           # Explicitly selected versions should be built for diagnostic reruns.
-          if [ -n "${{ github.event.inputs.versions }}" ] || [ "${{ github.event.inputs.force_rebuild }}" = "true" ]; then
+          if [ "${{ github.event.inputs.existing_versions_only }}" = "true" ]; then
+            EXISTING_TAGS=$(python3 .github/scripts/registry-tags.py uoohyo/stm32-cmake 3 --all)
+            BUILD_VERSIONS=$(printf '%s' "$ALL_VERSIONS" | jq -c --argjson tags "$EXISTING_TAGS" \
+              '[.[] | select(.version as $v | ($tags | index($v)) != null)]')
+            echo "Rebuilding existing versions only; undistributed versions are excluded"
+          elif [ -n "${{ github.event.inputs.versions }}" ] || [ "${{ github.event.inputs.force_rebuild }}" = "true" ]; then
             BUILD_VERSIONS="$ALL_VERSIONS"
             echo "Explicit build selection / force_rebuild: rebuilding selected versions"
           else
@@ -217,7 +226,18 @@ jobs:
 
       - name: Publish the tested image and verify its identity
         if: github.event.inputs.push_to_registry != 'false'
+        env:
+          REQUIRE_EXISTING_IMAGE: ${{ github.event.inputs.existing_versions_only }}
         run: bash .github/scripts/publish-tested-image.sh 'uoohyo/stm32-cmake:${{ matrix.version_info.version }}' 'published/${{ matrix.version_info.version }}.json'
+
+      - name: Preserve rollback ledger even if publication fails
+        if: always() && github.event.inputs.existing_versions_only == 'true' && github.event.inputs.push_to_registry != 'false'
+        uses: actions/upload-artifact@v7
+        with:
+          name: rollback-${{ matrix.version_info.version }}
+          path: rollback/*.json
+          if-no-files-found: warn
+          retention-days: 90
 
       - name: Record successful publication
         if: github.event.inputs.push_to_registry != 'false'
