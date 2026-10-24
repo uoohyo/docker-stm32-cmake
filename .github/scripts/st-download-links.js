@@ -120,7 +120,7 @@ function serviceOriginDiagnostic(location) {
 }
 
 function authenticationRedirectError(location, formAction, version) {
-  const error = new Error(`Untrusted authentication redirect; reason=${loginUrlRejectionReason(location, version)}; page=${sanitizedLocation(location)}; form=${sanitizedLocation(formAction)}; service=${JSON.stringify(serviceOriginDiagnostic(location))}`);
+  const error = new Error(`Untrusted authentication redirect; discoveryReason=${loginUrlRejectionReason(location, version)}; page=${sanitizedLocation(location)}; form=${sanitizedLocation(formAction)}; service=${JSON.stringify(serviceOriginDiagnostic(location))}`);
   error.nonRetryable = true;
   return error;
 }

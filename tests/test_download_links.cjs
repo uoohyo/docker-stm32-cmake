@@ -38,7 +38,7 @@ test('untrusted redirect diagnostics omit secrets and are not retried', () => {
   const { authenticationRedirectError, loginUrlRejectionReason } = require('../.github/scripts/st-download-links');
   const error = authenticationRedirectError('https://user:secret@my.st.com/changed?token=secret#secret', 'https://my.st.com/submit?token=secret', version);
   assert.equal(error.nonRetryable, true);
-  assert.match(error.message, /reason=authority/);
+  assert.match(error.message, /discoveryReason=authority/);
   assert.match(error.message, /page=https:\/\/my.st.com\/\[redacted-path\]/);
   assert.ok(!error.message.includes('secret'));
   assert.equal(loginUrlRejectionReason('https://my.st.com/cas/login', version), 'none');
@@ -127,4 +127,14 @@ test('credential guard diagnostic identifies form and navigation failures withou
   assert.equal(bad.submitterCount, 1);
   assert.ok(!JSON.stringify(bad).includes('secret'));
   assert.ok(Object.values(bad).every(value => typeof value === 'boolean' || typeof value === 'number'));
+});
+
+
+test('discovery reason is labeled separately from runtime credential rejection', () => {
+  const { authenticationRedirectError, validateRuntimeCasUrl } = require('../.github/scripts/st-download-links');
+  const page = `https://my.st.com/cas/login?service=${encodeURIComponent('https://my.st.com/fixture')}`;
+  assert.ok(validateRuntimeCasUrl(page, login('www.st.com'), version));
+  const error = authenticationRedirectError(page, '/cas/login', version);
+  assert.match(error.message, /discoveryReason=service_origin/);
+  assert.ok(!error.message.includes('; reason='));
 });
