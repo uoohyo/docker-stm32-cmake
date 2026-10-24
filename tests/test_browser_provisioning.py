@@ -27,7 +27,7 @@ class BrowserProvisioningTests(unittest.TestCase):
         self.assertIn('RUNNER_TEMP:?', source)
         self.assertIn('GITHUB_ENV:?', source)
         self.assertIn('mktemp -d', source)
-        self.assertIn('export PUPPETEER_CACHE_DIR=', source)
+        self.assertIn('export PUPPETEER_CACHE_DIR\n', source)
         self.assertIn('>> "$GITHUB_ENV"', source)
         self.assertIn('npm ci --prefix "$SCRIPT_DIR" --ignore-scripts', source)
         self.assertIn('node "$SCRIPT_DIR/node_modules/puppeteer/lib/puppeteer/node/cli.js" browsers install chrome', source)

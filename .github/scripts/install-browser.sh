@@ -4,7 +4,8 @@ set -euo pipefail
 : "${RUNNER_TEMP:?Runner temporary directory is required}"
 : "${GITHUB_ENV:?GitHub job environment file is required}"
 # mktemp avoids shared home caches and isolates concurrent jobs on one machine.
-export PUPPETEER_CACHE_DIR="$(mktemp -d "${RUNNER_TEMP}/puppeteer.XXXXXXXX")"
+PUPPETEER_CACHE_DIR="$(mktemp -d "${RUNNER_TEMP}/puppeteer.XXXXXXXX")"
+export PUPPETEER_CACHE_DIR
 printf 'PUPPETEER_CACHE_DIR=%s\n' "$PUPPETEER_CACHE_DIR" >> "$GITHUB_ENV"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Do not rely on the best-effort package postinstall hook or a shared home cache.
