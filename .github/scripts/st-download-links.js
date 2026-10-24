@@ -1,6 +1,8 @@
 'use strict';
 
 const LOGIN_HOSTS = new Set(['www.st.com', 'my.st.com']);
+// Observed official redirect bridge only; never a credential-entry origin.
+const NAVIGATION_HOSTS = new Set([...LOGIN_HOSTS, 'sso.st.com']);
 
 function validateLoginUrl(value, version, allowMissingService = false) {
   try {
@@ -54,7 +56,7 @@ function validateCredentialFormAction(action, pageUrl, initialLoginUrl, version)
 function isTrustedNavigationUrl(value) {
   try {
     const url = new URL(value);
-    return url.protocol === 'https:' && LOGIN_HOSTS.has(url.hostname) && !url.port && !url.username && !url.password;
+    return url.protocol === 'https:' && NAVIGATION_HOSTS.has(url.hostname) && !url.port && !url.username && !url.password;
   } catch { return false; }
 }
 

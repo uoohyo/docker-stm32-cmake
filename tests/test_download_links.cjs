@@ -147,3 +147,13 @@ test('navigation diagnostics expose origins but never credential-bearing URL com
   assert.equal(navigationOriginDiagnostic('data:text/html,secret').origin, 'non-http-origin');
   assert.equal(navigationOriginDiagnostic('secret').origin, 'invalid-url');
 });
+
+
+test('observed ST SSO bridge is navigation-only, never a credential or discovery target', () => {
+  const { isTrustedNavigationUrl, validateRuntimeCasUrl, validateCredentialFormAction } = require('../.github/scripts/st-download-links');
+  assert.equal(isTrustedNavigationUrl('https://sso.st.com/fixture'), true);
+  for (const url of ['http://sso.st.com/fixture', 'https://sso.st.com:8443/fixture', 'https://secret@sso.st.com/fixture', 'https://sso.st.com.evil.example/fixture', 'https://other.st.com/fixture']) assert.equal(isTrustedNavigationUrl(url), false);
+  assert.equal(validateLoginUrl(login('sso.st.com'), version), null);
+  assert.equal(validateRuntimeCasUrl('https://sso.st.com/cas/login', login('www.st.com'), version), null);
+  assert.equal(validateCredentialFormAction('https://sso.st.com/cas/login', 'https://my.st.com/cas/login', login('www.st.com'), version), false);
+});
