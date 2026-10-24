@@ -2,9 +2,9 @@
 
 This page lists all available STM32CubeCLT versions and their Docker image availability.
 
-**Registry availability snapshot:** 2026-05-14 09:03:03 UTC
+**Last verified:** 2026-10-24 17:51:57 UTC
 
-**Discovery review:** 2026-10-24 UTC. Version 1.22.0 was detected by the [version check](https://github.com/uoohyo/docker-stm32-cmake/actions/runs/39409048106), but its [latest build](https://github.com/uoohyo/docker-stm32-cmake/actions/runs/39362568355) did not reach image publication. Existing availability rows retain the registry snapshot above; this edit does not claim a fresh registry or pull verification.
+Discovery source: [ST version inventory](https://www.st.com/en/development-tools/stm32cubeclt.html). Availability source: the complete Docker Hub tag listing fetched during this update. Discovery does not imply a successful build. An `available` row means the version tag was observed in the registry; it does not replace image pull or tool execution verification.
 
 <!-- VERSION_TABLE_START -->
 
